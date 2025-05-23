@@ -1,1 +1,3 @@
 # verified-signer-service
+This is a service that handles the signatures for transactions on behalf of users using privy's delegated signing (session keys).
+In order to ensure that we do not maliciously sign transactions and our strategies follow a set of user-defined rules, we verify every signature request with a TEE. This way, we can manage the users money without committing any malicious signatures. This repository will be open sourced.
