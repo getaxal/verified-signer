@@ -6,7 +6,7 @@ package vsock
 import (
 	"context"
 
-	"verified-signer-common/vsock/socket"
+	"github.com/axal/verified-signer-common/vsock/socket"
 
 	"golang.org/x/sys/unix"
 )

@@ -12,7 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"verified-signer-common/vsock/socket/internal/sockettest"
+
+	"github.com/axal/verified-signer-common/vsock/socket/internal/sockettest"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/net/nettest"

@@ -13,8 +13,9 @@ import (
 	"runtime"
 	"testing"
 
-	socket3 "verified-signer-common/vsock/socket"
-	"verified-signer-common/vsock/socket/internal/sockettest"
+	"github.com/axal/verified-signer-common/vsock/socket/internal/sockettest"
+
+	socket3 "github.com/axal/verified-signer-common/vsock/socket"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
