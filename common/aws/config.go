@@ -22,15 +22,15 @@ func NewAWSConfigFromYAML(configPath string) (*AWSConfig, error) {
 
 	// Load configuration using configor
 	if err := configor.Load(&config, configPath); err != nil {
-		log.Errorf("failed to load config from %s: %v", configPath, err)
 		return nil, fmt.Errorf("failed to load config from %s: %w", configPath, err)
 	}
 
 	// Validate credentials
 	if config.AWSCredentials.AccessKey == "" || config.AWSCredentials.AccessSecret == "" {
-		log.Errorf("could not fetch aws credentials from config file at :%s", configPath)
 		return nil, fmt.Errorf("could not fetch aws credentials from config file at :%s", configPath)
 	}
+
+	log.Infof("Loaded AWS config from: %s", configPath)
 
 	return &config, nil
 }
