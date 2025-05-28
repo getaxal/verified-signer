@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+	enclave "verified-signer-enclave"
 	privysigner "verified-signer-enclave/privy-signer"
 
 	"github.com/axal/verified-signer-common/aws"
@@ -8,7 +10,7 @@ import (
 )
 
 var AWSConfig *aws.AWSConfig
-var PrivyConfig *privysigner.PrivyConfig
+var PortsConfig *enclave.PortConfig
 
 func main() {
 	log.Info("Initiating enclave for Axal Verified Signer")
@@ -22,13 +24,33 @@ func main() {
 
 	AWSConfig = awsCfg
 
-	privyConfig, err := privysigner.InitPrivyConfig(*AWSConfig)
+	// Setup network port management config
+	portCfg, err := enclave.LoadPortConfig("config.yaml")
 
 	if err != nil {
-		log.Errorf("Could not fetch Privy config due to err: %v", err)
+		log.Errorf("Could not fetch Port config due to err: %v", err)
 		return
 	}
 
-	PrivyConfig = privyConfig
+	PortsConfig = portCfg
 
+	privyCli, err := privysigner.InitNewPrivyClient(PortsConfig, AWSConfig, "prod")
+
+	if err != nil {
+		log.Fatalf("Error creating privy cli: %v", err)
+	}
+
+	//////////
+	//Try it
+	//////////
+	err = privyCli.GetUser("cmaxahxt300afjl0miaf9pcdp")
+
+	if err != nil {
+		log.Errorf("Error getting user: %v", err)
+		return
+	}
+
+	for {
+		time.Sleep(time.Minute)
+	}
 }

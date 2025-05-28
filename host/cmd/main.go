@@ -13,6 +13,7 @@ func main() {
 	log.Info("Starting google auth POC host service")
 
 	go proxy.InitVsockToTcpProxy(ctx, 50001, 443, "https://secretsmanager."+aws.USEast2.String()+".amazonaws.com")
+	go proxy.InitVsockToTcpProxy(ctx, 50002, 443, "https://api.privy.io")
 
 	for {
 	}

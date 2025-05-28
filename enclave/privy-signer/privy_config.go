@@ -20,7 +20,9 @@ type PrivyConfig struct {
 	JWTVerificationKey  string `json:"jwt_verification_key" yaml:"jwt_verification_key"`
 }
 
-func InitPrivyConfig(awsConfig aws.AWSConfig) (*PrivyConfig, error) {
+// Init Privy config by fetching details from AWS SecretsManager using a Vsock HTTPS client. We need to provide a Vsock port for AWS communication for
+// this client.
+func InitPrivyConfig(awsConfig aws.AWSConfig, awsSecretsManagerPort uint32, environment string) (*PrivyConfig, error) {
 	smCfg := secretmanager.SecretManagerConfig{
 		Credentials: awsConfig.AWSCredentials,
 		Region:      aws.USEast2,
@@ -30,11 +32,20 @@ func InitPrivyConfig(awsConfig aws.AWSConfig) (*PrivyConfig, error) {
 
 	sm := secretmanager.NewSecretManager(smCfg)
 
-	sm.Client = network.InitHttpsClientWithTLSVsockTransport(50001, "secretsmanager.us-east-2.amazonaws.com")
+	sm.Client = network.InitHttpsClientWithTLSVsockTransport(awsSecretsManagerPort, "secretsmanager.us-east-2.amazonaws.com")
 
 	log.Info("Fetching Privy config from Secret Manager")
 
-	secretResponse, err := sm.GetSecret(context.Background(), "privy/dev")
+	var secretResponse *secretmanager.GetSecretValueResponse
+	var err error
+
+	if environment == "prod" {
+		secretResponse, err = sm.GetSecret(context.Background(), "prod/privy")
+	} else if environment == "dev" {
+		secretResponse, err = sm.GetSecret(context.Background(), "dev/privy")
+	} else {
+		return nil, fmt.Errorf("invalid environment, no such env: %s", environment)
+	}
 
 	if err != nil {
 		return nil, err

@@ -15,7 +15,7 @@ type VsockTLSRoundTripper struct {
 	TLSConfig *tls.Config
 }
 
-// Implement the round trip function with TLS support
+// Implement the round trip function with TLS support.
 func (v *VsockTLSRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Ensure we're using HTTPS
 	if req.URL.Scheme != "https" {

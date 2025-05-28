@@ -41,12 +41,7 @@ func forward(context context.Context, source, destination net.Conn, close bool) 
 			destination.Close()
 		}()
 	}
-	copied, err := io.Copy(destination, source)
-	if err != nil {
-		log.Errorf("Copy failed after %d bytes: %v", copied, err)
-	} else {
-		log.Infof("Copy completed: %d bytes transferred", copied)
-	}
+	io.Copy(destination, source)
 }
 
 func NewProxy(context context.Context, localPort, remoteCid, remotePort uint32) {
