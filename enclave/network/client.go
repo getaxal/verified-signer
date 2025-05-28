@@ -24,5 +24,4 @@ func InitHttpsClientWithTLSVsockTransport(vsockPort uint32, servername string) *
 	return &http.Client{
 		Transport: transport,
 	}
-
 }

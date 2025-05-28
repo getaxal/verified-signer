@@ -1,40 +1,34 @@
 package main
 
 import (
-	"context"
-	"verified-signer-enclave/network"
+	privysigner "verified-signer-enclave/privy-signer"
 
 	"github.com/axal/verified-signer-common/aws"
-	secretmanager "github.com/axal/verified-signer-common/aws/secret_manager"
 	log "github.com/sirupsen/logrus"
 )
 
+var AWSConfig *aws.AWSConfig
+var PrivyConfig *privysigner.PrivyConfig
+
 func main() {
-	println("Hello world")
+	log.Info("Initiating enclave for Axal Verified Signer")
 
-	cfg, err := aws.NewAWSConfigFromYAML("config.yaml")
-
-	if err != nil {
-		log.Errorf("Cannot fetch aws config")
-	}
-
-	smCfg := secretmanager.SecretManagerConfig{
-		Credentials: cfg.AWSCredentials,
-		Region:      aws.USEast2,
-	}
-
-	log.Infof("Loaded secret manager config: %+v", smCfg)
-
-	sm := secretmanager.NewSecretManager(smCfg)
-
-	sm.Client = network.InitHttpsClientWithTLSVsockTransport(50001, "secretsmanager.us-east-2.amazonaws.com")
-
-	res, err := sm.GetSecret(context.Background(), "privy/dev")
+	awsCfg, err := aws.NewAWSConfigFromYAML("config.yaml")
 
 	if err != nil {
-		log.Errorf("Could not get secret with err: %v", err)
+		log.Errorf("Could not fetch AWS config due to err: %v", err)
 		return
 	}
 
-	log.Infof("Secret: %+v", res)
+	AWSConfig = awsCfg
+
+	privyConfig, err := privysigner.InitPrivyConfig(*AWSConfig)
+
+	if err != nil {
+		log.Errorf("Could not fetch Privy config due to err: %v", err)
+		return
+	}
+
+	PrivyConfig = privyConfig
+
 }

@@ -115,7 +115,7 @@ func (sm *SecretManager) signRequest(req *http.Request, payload string) error {
 
 // GetSecret retrieves a secret from AWS Secrets Manager with a given secretName by directly sending a request to the AWS HTTPS APIs.
 // We sign the request with AWS sig4.
-func (sm *SecretManager) GetSecret(ctx context.Context, secretName string) (string, error) {
+func (sm *SecretManager) GetSecret(ctx context.Context, secretName string) (*GetSecretValueResponse, error) {
 	// Prepare request payload
 	reqPayload := GetSecretValueRequest{
 		SecretId: secretName,
@@ -123,43 +123,43 @@ func (sm *SecretManager) GetSecret(ctx context.Context, secretName string) (stri
 
 	payloadBytes, err := json.Marshal(reqPayload)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	// Create HTTP request
 	endpoint := sm.Config.GetSecretManagerEndpoint()
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payloadBytes))
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Sign the request
 	if err := sm.signRequest(req, string(payloadBytes)); err != nil {
-		return "", fmt.Errorf("failed to sign request: %w", err)
+		return nil, fmt.Errorf("failed to sign request: %w", err)
 	}
 
 	// Make the request
 	resp, err := sm.Client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to make request: %w", err)
+		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Read response
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	// Parse response
 	var secretResp GetSecretValueResponse
 	if err := json.Unmarshal(respBody, &secretResp); err != nil {
-		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	return secretResp.SecretString, nil
+	return &secretResp, nil
 }
