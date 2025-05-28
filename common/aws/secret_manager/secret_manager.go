@@ -1,0 +1,165 @@
+package secretmananger
+
+import (
+	"bytes"
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+)
+
+const (
+	algorithm       = "AWS4-HMAC-SHA256"
+	service         = "secretsmanager"
+	terminationChar = "aws4_request"
+)
+
+type SecretManager struct {
+	Client *http.Client
+	Config *SecretManagerConfig
+}
+
+// GetSecretValueRequest represents the request payload
+type GetSecretValueRequest struct {
+	SecretId string `json:"SecretId"`
+}
+
+// GetSecretValueResponse represents the API response
+type GetSecretValueResponse struct {
+	ARN           string   `json:"ARN"`
+	Name          string   `json:"Name"`
+	SecretString  string   `json:"SecretString"`
+	VersionId     string   `json:"VersionId"`
+	VersionStages []string `json:"VersionStages"`
+}
+
+// Creates a new Secret Manager instance
+func NewSecretManager(cfg SecretManagerConfig) *SecretManager {
+	return &SecretManager{
+		Client: &http.Client{Timeout: 30 * time.Second},
+		Config: &cfg,
+	}
+}
+
+// Use this function to sign the HTTP request to AWS. Uses AWS sig4 found here https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_sigv.html.
+func (sm *SecretManager) signRequest(req *http.Request, payload string) error {
+	t := time.Now().UTC()
+	amzDate := t.Format("20060102T150405Z")
+	dateStamp := t.Format("20060102")
+
+	// Get host from URL
+	host := req.URL.Host
+	if host == "" {
+		host = req.Host
+	}
+
+	// Set required headers BEFORE creating canonical headers
+	req.Header.Set("Host", host)
+	req.Header.Set("X-Amz-Date", amzDate)
+	req.Header.Set("X-Amz-Target", "secretsmanager.GetSecretValue")
+	req.Header.Set("Content-Type", "application/x-amz-json-1.1")
+
+	// Create canonical request
+	canonicalURI := req.URL.Path
+	if canonicalURI == "" {
+		canonicalURI = "/"
+	}
+
+	canonicalQueryString := req.URL.RawQuery
+
+	// Create canonical headers - MUST include Host
+	var headerNames []string
+	headerMap := make(map[string]string)
+
+	for name, values := range req.Header {
+		lowerName := strings.ToLower(name)
+		headerNames = append(headerNames, lowerName)
+		headerMap[lowerName] = strings.TrimSpace(strings.Join(values, ","))
+	}
+
+	sort.Strings(headerNames)
+
+	var canonicalHeaders strings.Builder
+	for _, name := range headerNames {
+		canonicalHeaders.WriteString(fmt.Sprintf("%s:%s\n", name, headerMap[name]))
+	}
+
+	signedHeaders := strings.Join(headerNames, ";")
+	payloadHash := sha256Hash(payload)
+
+	canonicalRequest := fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s",
+		req.Method, canonicalURI, canonicalQueryString,
+		canonicalHeaders.String(), signedHeaders, payloadHash)
+
+	// Create string to sign
+	credentialScope := fmt.Sprintf("%s/%s/%s/%s", dateStamp, sm.Config.Region, service, terminationChar)
+	stringToSign := fmt.Sprintf("%s\n%s\n%s\n%s",
+		algorithm, amzDate, credentialScope, sha256Hash(canonicalRequest))
+
+	// Create signature
+	signingKey := createSignatureKey(sm.Config.Credentials.AccessSecret, dateStamp, sm.Config.Region.String(), service)
+	signature := hex.EncodeToString(hmacSHA256(signingKey, stringToSign))
+
+	// Create authorization header
+	authorizationHeader := fmt.Sprintf("%s Credential=%s/%s, SignedHeaders=%s, Signature=%s",
+		algorithm, sm.Config.Credentials.AccessKey, credentialScope, signedHeaders, signature)
+
+	req.Header.Set("Authorization", authorizationHeader)
+	return nil
+}
+
+// GetSecret retrieves a secret from AWS Secrets Manager with a given secretName by directly sending a request to the AWS HTTPS APIs.
+// We sign the request with AWS sig4.
+func (sm *SecretManager) GetSecret(ctx context.Context, secretName string) (string, error) {
+	// Prepare request payload
+	reqPayload := GetSecretValueRequest{
+		SecretId: secretName,
+	}
+
+	payloadBytes, err := json.Marshal(reqPayload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Create HTTP request
+	endpoint := sm.Config.GetSecretManagerEndpoint()
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Sign the request
+	if err := sm.signRequest(req, string(payloadBytes)); err != nil {
+		return "", fmt.Errorf("failed to sign request: %w", err)
+	}
+
+	// Make the request
+	resp, err := sm.Client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse response
+	var secretResp GetSecretValueResponse
+	if err := json.Unmarshal(respBody, &secretResp); err != nil {
+		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return secretResp.SecretString, nil
+}
