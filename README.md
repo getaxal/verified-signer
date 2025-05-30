@@ -14,11 +14,13 @@ This is the code that will be running inside the enclave. It consists of 2 logic
 
 The privy signer is a service that sends transaction signature requests to the privy backend to sign after they have been verfied by the verifier. It does so through a secure HTTPS connection, which the host cannot intercept due to TLS encryption.
 
-![Unable to load](/docs/signature-arch.png "Privy signer architecture")
+<img src="docs/signature-arch.png" alt="Logo" style="background-color: white; padding: 10px;">
+
 
 The transaction verifier verifies traits in the transaction to ensure that the transactions are safe and represent the users interests. These include safeguards to guard user funds. The verifier gets up to date information of onchain events through RPC feeds (in HTTPS)
 
-![Unable to load](/docs/verifier-arch.png "Transaction verifier architecture")
+<img src="docs/verifier-arch.png" alt="Logo" style="background-color: white; padding: 10px;">
+
 
 More information and documentation for Enclave APIs can be found at the enclave's [README](/enclave/README.md).
 
