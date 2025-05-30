@@ -13,10 +13,12 @@ type AWSConfig struct {
 
 // AWS Credentials for temporary
 type AWSCredentials struct {
-	AccessKey    string `yaml:"access_key" json:"access_key"`
-	AccessSecret string `yaml:"access_secret" json:"access_secret"`
+	AccessKey    string    `yaml:"access_key" json:"access_key"`
+	AccessSecret string    `yaml:"access_secret" json:"access_secret"`
+	Region       AWSRegion `yaml:"region" json:"region"`
 }
 
+// Inits a new AWSConfig by parsing the config file at the given path. Supports yaml and json.
 func NewAWSConfigFromYAML(configPath string) (*AWSConfig, error) {
 	var config AWSConfig
 
