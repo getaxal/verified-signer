@@ -51,8 +51,6 @@ func GetAuthorizationSignature(body interface{}, methodType string, privyAuthori
 		return "", err
 	}
 
-	log.Infof("Canonicalised payload:%+v", string(canonical))
-
 	signature, err := SignPayload(privyAuthorizationKey, string(canonical))
 
 	if err != nil {

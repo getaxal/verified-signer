@@ -60,12 +60,10 @@ func main() {
 
 	user, err := privyCli.GetUser("cmaxahxt300afjl0miaf9pcdp")
 
-	log.Infof("user: %+v", user)
 	if err != nil {
 		log.Errorf("Error fetching user: %s", err)
 	}
 
-	// log.Infof("User: %+v", user)
 	wallet_id := user.LinkedAccounts[1].WalletID
 	err = privyCli.EthSignTransaction(dummy_tx, wallet_id)
 

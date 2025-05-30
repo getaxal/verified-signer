@@ -40,6 +40,18 @@ type EthSignTransactionRequest struct {
 	} `json:"params"`
 }
 
+// Creates a new Privy eth_signTransaction Request
+func NewSignTransactionRequest(tx *EthTransaction) *EthSignTransactionRequest {
+	return &EthSignTransactionRequest{
+		Method: "eth_signTransaction",
+		Params: struct {
+			Transaction EthTransaction `json:"transaction"`
+		}{
+			Transaction: *tx,
+		},
+	}
+}
+
 // Request struct for eth_sendTransaction
 // Example would be:
 //
@@ -63,18 +75,6 @@ type EthSendTransactionRequest struct {
 	} `json:"params"`
 }
 
-// Creates a new Privy eth_signTransaction Request
-func NewSignTransactionRequest(tx *EthTransaction) *EthSignTransactionRequest {
-	return &EthSignTransactionRequest{
-		Method: "eth_signTransaction",
-		Params: struct {
-			Transaction EthTransaction `json:"transaction"`
-		}{
-			Transaction: *tx,
-		},
-	}
-}
-
 // Creates a new Privy eth_sendTransaction Request
 func NewSendTransactionRequest(tx *EthTransaction, caip2, chainType string) *EthSendTransactionRequest {
 	return &EthSendTransactionRequest{
@@ -87,4 +87,51 @@ func NewSendTransactionRequest(tx *EthTransaction, caip2, chainType string) *Eth
 			Transaction: *tx,
 		},
 	}
+}
+
+type EthPersonalSignRequest struct {
+	Method string `json:"method"`
+	Params struct {
+		Message  string `json:"message"`
+		Encoding string `json:"encoding"`
+	} `json:"params"`
+}
+
+// Creates a new Privy personal_sign Request
+func NewPersonalSignRequest(message string) *EthPersonalSignRequest {
+	return &EthPersonalSignRequest{
+		Method: "personal_sign",
+		Params: struct {
+			Message  string `json:"message"`
+			Encoding string `json:"encoding"`
+		}{
+			Message:  message,
+			Encoding: "utf-8",
+		},
+	}
+}
+
+// EthTransactionSendResponseData represents the data field in the response to the eth_sendTransaction request
+type EthSignTransactionResponseData struct {
+	Signature string `json:"signature"`
+	Encoding  string `json:"encoding"`
+}
+
+// EthSendTransactionResponse represents the complete response from the eth_signTransaction and personal_sign request
+type EthSignTransactionResponse struct {
+	Method string                         `json:"method"`
+	Data   EthSignTransactionResponseData `json:"data"`
+}
+
+// EthTransactionSendResponseData represents the data field in the response to the eth_sendTransaction request
+type EthSendTransactionResponseData struct {
+	Hash          string `json:"hash"`
+	CAIP2         string `json:"caip2"`
+	TransactionID string `json:"transaction_id"`
+}
+
+// EthSendTransactionResponse represents the complete response from the eth_sendTransaction request
+type EthSendTransactionResponse struct {
+	Method string                         `json:"method"`
+	Data   EthSendTransactionResponseData `json:"data"`
 }
