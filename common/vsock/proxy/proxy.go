@@ -26,7 +26,6 @@ func handle(context context.Context, conn net.Conn, remoteCid, remotePort uint32
 }
 
 func forward(context context.Context, source, destination net.Conn, close bool) {
-	log.Info("forwarding")
 	log.Infof("Source: %v -> Destination: %v", source.RemoteAddr(), destination.RemoteAddr())
 
 	defer func() {

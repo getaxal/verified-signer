@@ -2,11 +2,14 @@ package privysigner
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	enclave "verified-signer-enclave"
 	"verified-signer-enclave/network"
+	authorizationsignature "verified-signer-enclave/privy-signer/authorization_signature"
+	"verified-signer-enclave/privy-signer/data"
 
 	"github.com/axal/verified-signer-common/aws"
 
@@ -14,9 +17,10 @@ import (
 )
 
 type PrivyClient struct {
-	baseUrl     string
-	client      *http.Client
-	privyConfig *PrivyConfig
+	baseUrl       string
+	client        *http.Client
+	privyConfig   *PrivyConfig
+	authorization string
 }
 
 // Inits a new Privy Client with a custom Transport Layer service that routes https through the privyAPIVsockPort.
@@ -32,36 +36,90 @@ func InitNewPrivyClient(portsCfg *enclave.PortConfig, awsConfig *aws.AWSConfig, 
 	// Setup a new Http client for Privy API calls
 	privyClient := network.InitHttpsClientWithTLSVsockTransport(portsCfg.PrivyAPIVsockPort, "api.privy.io")
 
+	username := privyConfig.AppID
+	password := privyConfig.AppSecret
+
+	authorization := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+
 	return &PrivyClient{
-		baseUrl:     "https://api.privy.io",
-		client:      privyClient,
-		privyConfig: privyConfig,
+		baseUrl:       "https://api.privy.io",
+		client:        privyClient,
+		privyConfig:   privyConfig,
+		authorization: authorization,
 	}, nil
 
 }
 
-// Gets a user given a userID from the Privy Backend
-func (cli *PrivyClient) GetUser(userId string) error {
-	path := "/v1/users/"
-	url := fmt.Sprintf("%s%s%s", cli.baseUrl, path, userId)
+// Adds the standard API headers for most Privy API calls
+func (cli *PrivyClient) addStandardPrivyHeaders(req *http.Request) {
+	req.Header.Add("privy-app-id", cli.privyConfig.AppID)
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", "Basic "+cli.authorization)
+}
 
-	username := cli.privyConfig.AppID
-	password := cli.privyConfig.AppSecret
-
-	authorization := username + ":" + password
-	encoded := base64.StdEncoding.EncodeToString([]byte(authorization))
+// Gets a user given a Privy userID
+func (cli *PrivyClient) GetUser(userId string) (*data.PrivyUser, error) {
+	url := fmt.Sprintf("%s%s", cli.baseUrl, GET_USER_PATH.Build(userId))
 
 	req, err := http.NewRequest("GET", url, nil)
+
+	if err != nil {
+		log.Errorf("Error creating request: %v", err)
+		return nil, err
+	}
+
+	cli.addStandardPrivyHeaders(req)
+
+	res, err := cli.client.Do(req)
+	if err != nil {
+		log.Errorf("Error making request: %v", err)
+		return nil, err
+	}
+
+	defer res.Body.Close()
+
+	// Check status code
+	if res.StatusCode != http.StatusOK {
+		log.Printf("Warning: Received status code %d", res.StatusCode)
+	}
+
+	// Read response body
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		log.Errorf("Error reading response body: %v", err)
+		return nil, err
+	}
+
+	var user data.PrivyUser
+	if err := json.Unmarshal(body, &user); err != nil {
+		return nil, fmt.Errorf("deserializing JSON: %w", err)
+	}
+
+	return &user, nil
+}
+
+// Signs a transaction using the eth_signTransaction method
+func (cli *PrivyClient) EthSignTransaction(txRequest *data.EthSignTransactionRequest, wallet_id string) error {
+	url := fmt.Sprintf("%s%s", cli.baseUrl, SIGN_TX_PATH.Build(wallet_id))
+	req, err := http.NewRequest("POST", url, nil)
 
 	if err != nil {
 		log.Errorf("Error creating request: %v", err)
 		return err
 	}
 
-	// Add headers
-	req.Header.Add("privy-app-id", cli.privyConfig.AppID)
-	req.Header.Add("Authorization", "Basic "+encoded)
-	req.Header.Add("Content-Type", "application/json")
+	// Add basic headers
+	cli.addStandardPrivyHeaders(req)
+
+	// Add auth signature header
+	signature, err := authorizationsignature.GetAuthorizationSignature(*txRequest, req.Method, cli.privyConfig.DelegatedActionsKey, url, cli.privyConfig.AppID)
+	if err != nil {
+		log.Errorf("Error getting authorization signature: %v", err)
+		return err
+	}
+
+	log.Infof("Signature:%s", signature)
+	req.Header.Add("privy-authorization-signature", signature)
 
 	res, err := cli.client.Do(req)
 	if err != nil {
@@ -83,9 +141,7 @@ func (cli *PrivyClient) GetUser(userId string) error {
 		return err
 	}
 
-	// Print results
-	log.Infof("Status: %s\n", res.Status)
-	log.Infof("Headers: %v\n", res.Header)
-	log.Infof("Response Body:\n%s\n", string(body))
+	log.Infof("Resp body :%s", string(body))
+
 	return nil
 }
