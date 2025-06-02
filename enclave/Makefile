@@ -12,7 +12,7 @@ VSOCK_PORT_PRIVY = 50002
 VSOCK_PORT_BACKEND = 50003
 AWS_REGION = us-east-2
 PRIVY_API_URL = api.privy.io
-GITHUB_TOKEN = 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
+GITHUB_TOKEN = <>
 
 # Log files
 SECRETS_LOG = /var/log/vsock-secrets.log
