@@ -1,6 +1,5 @@
 module github.com/getaxal/verified-signer/enclave
 
-
 go 1.24
 
 require (
