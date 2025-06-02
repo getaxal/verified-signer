@@ -21,5 +21,5 @@ func InitTcpToVsockProxy(ctx context.Context, tcpPort uint32, vsockPort uint32) 
 	log.Infof("Listening to tcp at port: %d", tcpPort)
 	log.Infof("Forwarding to vsock at port: %d", vsockPort)
 
-	vsockproxy.NewProxy(ctx, tcpPort, 3, vsockPort)
+	vsockproxy.NewProxy(ctx, tcpPort, 5, vsockPort)
 }

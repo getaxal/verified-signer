@@ -13,13 +13,12 @@ ENV GOPRIVATE=github.com/getaxal/*
 
 WORKDIR /app
 
-# Copy everything (both modules)
+# Copy enclave directory contents
 COPY . .
 
-# Build from the enclave directory
-WORKDIR /app/enclave
+# Download dependencies and build
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -v -a -installsuffix cgo -o main ./cmd
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -a -installsuffix cgo -o main ./cmd
 
 # Stage 2: Runtime image
 FROM alpine:latest
@@ -27,8 +26,8 @@ WORKDIR /root/
 
 RUN apk add --no-cache ca-certificates
 
-COPY --from=builder /app/enclave/main .
+COPY --from=builder /app/main .
 RUN chmod +x ./main
 
-COPY enclave/config.yaml ./config.yaml
-CMD ["./main"]
+COPY config.yaml /root/config.yaml
+CMD ["/root/main"]
