@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"verified-signer-enclave/network"
 
-	"github.com/axal/verified-signer-common/aws"
+	"github.com/axal/verified-signer/enclave/network"
+
+	"github.com/axal/verified-signer/common/aws"
 	log "github.com/sirupsen/logrus"
 
-	secretmanager "github.com/axal/verified-signer-common/aws/secret_manager"
+	secretmanager "github.com/axal/verified-signer/common/aws/secret_manager"
 )
 
 // Config for privy access

@@ -1,12 +1,13 @@
 package main
 
 import (
-	"time"
-	enclave "verified-signer-enclave"
-	privysigner "verified-signer-enclave/privy-signer"
-	"verified-signer-enclave/privy-signer/data"
+	privysigner "github.com/axal/verified-signer/enclave/privy-signer"
 
-	"github.com/axal/verified-signer-common/aws"
+	"github.com/axal/verified-signer/enclave/router"
+
+	"github.com/axal/verified-signer/enclave"
+
+	"github.com/axal/verified-signer/common/aws"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -35,44 +36,11 @@ func main() {
 
 	PortsConfig = portCfg
 
-	privyCli, err := privysigner.InitNewPrivyClient(PortsConfig, AWSConfig, "prod")
+	_, err = privysigner.InitNewPrivyClient(PortsConfig, AWSConfig, "prod")
 
 	if err != nil {
 		log.Fatalf("Error creating privy cli: %v", err)
 	}
 
-	////////////
-	// Try it //
-	////////////
-
-	dummy_tx := data.NewSignTransactionRequest(
-		&data.EthTransaction{
-			To:                   "0xtest",
-			ChainID:              enclave.ToInt64Ptr(1),
-			Nonce:                enclave.ToInt64Ptr(1),
-			Value:                enclave.ToInt64Ptr(1),
-			Data:                 "0x",
-			GasLimit:             enclave.ToInt64Ptr(1),
-			MaxFeePerGas:         enclave.ToInt64Ptr(1),
-			MaxPriorityFeePerGas: enclave.ToInt64Ptr(1),
-		},
-	)
-
-	user, err := privyCli.GetUser("cmaxahxt300afjl0miaf9pcdp")
-
-	if err != nil {
-		log.Errorf("Error fetching user: %s", err)
-	}
-
-	wallet_id := user.LinkedAccounts[1].WalletID
-	err = privyCli.EthSignTransaction(dummy_tx, wallet_id)
-
-	if err != nil {
-		log.Errorf("Error signing tx: %v", err)
-		return
-	}
-
-	for {
-		time.Sleep(time.Minute)
-	}
+	router.InitRouter(PortsConfig.RouterVsockPort)
 }

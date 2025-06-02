@@ -2,7 +2,8 @@ package authorizationsignature
 
 import (
 	"encoding/json"
-	enclave "verified-signer-enclave"
+
+	"github.com/axal/verified-signer/enclave"
 
 	"github.com/cyberphone/json-canonicalization/go/src/webpki.org/jsoncanonicalizer"
 	log "github.com/sirupsen/logrus"

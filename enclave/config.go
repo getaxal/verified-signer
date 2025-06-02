@@ -10,6 +10,7 @@ import (
 type PortConfig struct {
 	AWSSecretManagerVsockPort uint32 `yaml:"aws_secret_manager_vsock_port"`
 	PrivyAPIVsockPort         uint32 `yaml:"privy_api_vsock_port"`
+	RouterVsockPort           uint32 `yaml:"router_vsock_port"`
 }
 
 // Loads Ports config from a config path
@@ -25,7 +26,7 @@ func LoadPortConfig(configPath string) (*PortConfig, error) {
 		return nil, fmt.Errorf("failed to load config from %s: %w", configPath, err)
 	}
 
-	if config.Ports.AWSSecretManagerVsockPort == 0 || config.Ports.PrivyAPIVsockPort == 0 {
+	if config.Ports.AWSSecretManagerVsockPort == 0 || config.Ports.PrivyAPIVsockPort == 0 || config.Ports.RouterVsockPort == 0 {
 		return nil, fmt.Errorf("no port loaded from: %s", configPath)
 	}
 
