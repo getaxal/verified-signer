@@ -1,4 +1,4 @@
-module github.com/axal/verified-signer-host
+module github.com/axal/verified-signer/host
 
 go 1.23.9
 

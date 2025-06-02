@@ -1,4 +1,4 @@
-package proxy
+package network
 
 import (
 	"context"
@@ -14,4 +14,12 @@ func InitVsockToTcpProxy(ctx context.Context, vsockPort uint32, tcpPort uint32, 
 	log.Infof("Listening to vsock at port: %v", vsockPort)
 	log.Infof("Forwarding tcp to %s:%v", forwardUrl, tcpPort)
 	vsockproxy.NewVsockProxy(ctx, forwardUrl, tcpPort, vsockPort)
+}
+
+// This function listens to the TCP port provided and forwards the network call into the Vsock port provided.
+func InitTcpToVsockProxy(ctx context.Context, tcpPort uint32, vsockPort uint32) {
+	log.Infof("Listening to tcp at port: %d", tcpPort)
+	log.Infof("Forwarding to vsock at port: %d", vsockPort)
+
+	vsockproxy.NewProxy(ctx, tcpPort, 3, vsockPort)
 }

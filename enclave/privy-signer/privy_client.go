@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	enclave "verified-signer-enclave"
-	"verified-signer-enclave/network"
-	authorizationsignature "verified-signer-enclave/privy-signer/authorization_signature"
-	"verified-signer-enclave/privy-signer/data"
 
-	"github.com/axal/verified-signer-common/aws"
+	"github.com/axal/verified-signer/enclave"
+	"github.com/axal/verified-signer/enclave/network"
+	"github.com/axal/verified-signer/enclave/privy-signer/data"
+
+	authorizationsignature "github.com/axal/verified-signer/enclave/privy-signer/authorization_signature"
+
+	"github.com/axal/verified-signer/common/aws"
 
 	log "github.com/sirupsen/logrus"
 )

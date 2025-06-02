@@ -1,4 +1,4 @@
-module github.com/axal/verified-signer-common
+module github.com/axal/verified-signer/common
 
 go 1.23.9
 
