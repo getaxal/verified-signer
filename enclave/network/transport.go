@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"net/http"
 
-	"github.com/axal/verified-signer/common/vsock"
+	"github.com/getaxal/verified-signer/common/vsock"
 	log "github.com/sirupsen/logrus"
 )
 

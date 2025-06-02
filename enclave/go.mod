@@ -1,10 +1,10 @@
-module github.com/axal/verified-signer/enclave
+module github.com/getaxal/verified-signer/enclave
 
 
-go 1.23.9
+go 1.24
 
 require (
-	github.com/axal/verified-signer/common v0.0.0
+	github.com/getaxal/verified-signer/common v0.1.0
 	github.com/gin-gonic/gin v1.10.1
 	github.com/sirupsen/logrus v1.9.3
 )

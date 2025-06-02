@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/axal/verified-signer/common/vsock/socket/internal/sockettest"
+	"github.com/getaxal/verified-signer/common/vsock/socket/internal/sockettest"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/net/nettest"

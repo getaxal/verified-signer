@@ -1,13 +1,13 @@
 package main
 
 import (
-	privysigner "github.com/axal/verified-signer/enclave/privy-signer"
+	privysigner "github.com/getaxal/verified-signer/enclave/privy-signer"
 
-	"github.com/axal/verified-signer/enclave/router"
+	"github.com/getaxal/verified-signer/enclave/router"
 
-	"github.com/axal/verified-signer/enclave"
+	"github.com/getaxal/verified-signer/enclave"
 
-	"github.com/axal/verified-signer/common/aws"
+	"github.com/getaxal/verified-signer/common/aws"
 	log "github.com/sirupsen/logrus"
 )
 

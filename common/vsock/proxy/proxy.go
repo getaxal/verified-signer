@@ -8,7 +8,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/axal/verified-signer/common/vsock"
+	"github.com/getaxal/verified-signer/common/vsock"
 
 	log "github.com/sirupsen/logrus"
 )

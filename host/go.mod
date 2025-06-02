@@ -1,9 +1,9 @@
-module github.com/axal/verified-signer/host
+module github.com/getaxal/verified-signer/host
 
-go 1.23.9
+go 1.24
 
 require (
-	github.com/axal/verified-signer-common v0.0.0
+	github.com/getaxal/verified-signer-common v0.1.0
 	github.com/sirupsen/logrus v1.9.3
 )
 

@@ -3,7 +3,7 @@ package network
 import (
 	"context"
 
-	vsockproxy "github.com/axal/verified-signer-common/vsock/proxy"
+	vsockproxy "github.com/getaxal/verified-signer-common/vsock/proxy"
 
 	log "github.com/sirupsen/logrus"
 )

@@ -8,13 +8,13 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/axal/verified-signer/enclave"
-	"github.com/axal/verified-signer/enclave/network"
-	"github.com/axal/verified-signer/enclave/privy-signer/data"
+	"github.com/getaxal/verified-signer/enclave"
+	"github.com/getaxal/verified-signer/enclave/network"
+	"github.com/getaxal/verified-signer/enclave/privy-signer/data"
 
-	authorizationsignature "github.com/axal/verified-signer/enclave/privy-signer/authorization_signature"
+	authorizationsignature "github.com/getaxal/verified-signer/enclave/privy-signer/authorization_signature"
 
-	"github.com/axal/verified-signer/common/aws"
+	"github.com/getaxal/verified-signer/common/aws"
 
 	log "github.com/sirupsen/logrus"
 )

@@ -1,6 +1,6 @@
 package secretmananger
 
-import "github.com/axal/verified-signer/common/aws"
+import "github.com/getaxal/verified-signer/common/aws"
 
 type SecretManagerConfig struct {
 	Credentials aws.AWSCredentials

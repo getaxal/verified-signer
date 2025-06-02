@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/axal/verified-signer-common/aws"
-	"github.com/axal/verified-signer/host/network"
+	"github.com/getaxal/verified-signer-common/aws"
+	"github.com/getaxal/verified-signer/host/network"
 	log "github.com/sirupsen/logrus"
 )
 
