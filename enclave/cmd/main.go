@@ -17,7 +17,7 @@ var PortsConfig *enclave.PortConfig
 func main() {
 	log.Info("Initiating enclave for Axal Verified Signer")
 
-	awsCfg, err := aws.NewAWSConfigFromYAML("config.yaml")
+	awsCfg, err := aws.NewAWSConfigFromYAML("/root/config.yaml")
 
 	if err != nil {
 		log.Errorf("Could not fetch AWS config due to err: %v", err)
@@ -27,7 +27,7 @@ func main() {
 	AWSConfig = awsCfg
 
 	// Setup network port management config
-	portCfg, err := enclave.LoadPortConfig("config.yaml")
+	portCfg, err := enclave.LoadPortConfig("/root/config.yaml")
 
 	if err != nil {
 		log.Errorf("Could not fetch Port config due to err: %v", err)
