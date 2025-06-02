@@ -3,7 +3,7 @@ package router
 import (
 	"net/http"
 
-	"github.com/axal/verified-signer/common/vsock"
+	"github.com/getaxal/verified-signer/common/vsock"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )

@@ -4,7 +4,7 @@ module github.com/getaxal/verified-signer/enclave
 go 1.24
 
 require (
-	github.com/getaxal/verified-signer/common v0.1.0
+	github.com/getaxal/verified-signer/common v0.1.1
 	github.com/gin-gonic/gin v1.10.1
 	github.com/sirupsen/logrus v1.9.3
 )
