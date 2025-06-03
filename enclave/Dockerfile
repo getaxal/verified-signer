@@ -30,4 +30,4 @@ COPY --from=builder /app/main .
 RUN chmod +x ./main
 
 COPY config.yaml /root/config.yaml
-CMD ["/root/main"]
+CMD ["/root/main", "-config", "/root/config.yaml"]
