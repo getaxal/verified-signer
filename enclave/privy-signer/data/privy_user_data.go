@@ -10,6 +10,17 @@ type PrivyUser struct {
 	IsGuest          bool            `json:"is_guest"`
 }
 
+// Fetches the users Eth delegated wallet, this is a wallet that simply is both an ethereum wallet as well as a delegated wallet
+func (pu *PrivyUser) GetUsersEthDelegatedWallet() *LinkedAccount {
+	for _, acc := range pu.LinkedAccounts {
+		if acc.Delegated && acc.ChainType == "ethereum" {
+			return &acc
+		}
+	}
+
+	return nil
+}
+
 // LinkedAccount represents different types of linked accounts (email, wallet, etc.)
 type LinkedAccount struct {
 	// Common fields for all account types

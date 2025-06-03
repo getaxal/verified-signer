@@ -1,5 +1,7 @@
 package data
 
+import "fmt"
+
 // Common transaction structure used in both APIs
 type EthTransaction struct {
 	ChainID              *int64 `json:"chain_id,omitempty"`
@@ -52,6 +54,18 @@ func NewSignTransactionRequest(tx *EthTransaction) *EthSignTransactionRequest {
 	}
 }
 
+func (req *EthSignTransactionRequest) ValidateTxRequest() error {
+	if req.Method != "eth_signTransaction" {
+		return fmt.Errorf("incorrect transaction request method")
+	}
+
+	if req.Params.Transaction.To == "" {
+		return fmt.Errorf("missing to field in the transaction, it is required")
+	}
+
+	return nil
+}
+
 // Request struct for eth_sendTransaction
 // Example would be:
 //
@@ -89,6 +103,26 @@ func NewSendTransactionRequest(tx *EthTransaction, caip2, chainType string) *Eth
 	}
 }
 
+func (req *EthSendTransactionRequest) ValidateTxRequest() error {
+	if req.Method != "eth_sendTransaction" {
+		return fmt.Errorf("incorrect transaction request method")
+	}
+
+	if req.Params.Transaction.To == "" {
+		return fmt.Errorf("missing to field in the transaction, it is required")
+	}
+
+	if req.CAIP2 == "" {
+		return fmt.Errorf("missing CAIP2 field in the transaction, it is required")
+	}
+
+	if req.ChainType != "ethereum" {
+		return fmt.Errorf("incorrect chainType field in the transaction, it is required")
+	}
+
+	return nil
+}
+
 type EthPersonalSignRequest struct {
 	Method string `json:"method"`
 	Params struct {
@@ -111,9 +145,25 @@ func NewPersonalSignRequest(message string) *EthPersonalSignRequest {
 	}
 }
 
+func (req *EthPersonalSignRequest) ValidateTxRequest() error {
+	if req.Method != "personal_sign" {
+		return fmt.Errorf("incorrect transaction request method")
+	}
+
+	if req.Params.Message == "" {
+		return fmt.Errorf("missing message field in the transaction, it is required")
+	}
+
+	if req.Params.Encoding != "utf-8" {
+		return fmt.Errorf("missing encoding field in the transaction, it is required")
+	}
+
+	return nil
+}
+
 // EthTransactionSendResponseData represents the data field in the response to the eth_sendTransaction request
 type EthSignTransactionResponseData struct {
-	Signature string `json:"signature"`
+	Signature string `json:"signed_transaction"`
 	Encoding  string `json:"encoding"`
 }
 
@@ -134,4 +184,16 @@ type EthSendTransactionResponseData struct {
 type EthSendTransactionResponse struct {
 	Method string                         `json:"method"`
 	Data   EthSendTransactionResponseData `json:"data"`
+}
+
+// EthPersonalSignResponseData represents the data field in the response to the personalSign request
+type EthPersonalSignResponseData struct {
+	Signature string `json:"signature"`
+	Encoding  string `json:"encoding"`
+}
+
+// EthPersonalSignResponse represents the complete response from the personalSign request
+type EthPersonalSignResponse struct {
+	Method string                      `json:"method"`
+	Data   EthPersonalSignResponseData `json:"data"`
 }

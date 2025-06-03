@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+
 	privysigner "github.com/getaxal/verified-signer/enclave/privy-signer"
 
 	"github.com/getaxal/verified-signer/enclave/router"
@@ -17,7 +19,11 @@ var PortsConfig *enclave.PortConfig
 func main() {
 	log.Info("Initiating enclave for Axal Verified Signer")
 
-	awsCfg, err := aws.NewAWSConfigFromYAML("/root/config.yaml")
+	// Define command line flag for config path
+	configPath := flag.String("config", "config.yaml", "Path to configuration file")
+	flag.Parse()
+
+	awsCfg, err := aws.NewAWSConfigFromYAML(*configPath)
 
 	if err != nil {
 		log.Errorf("Could not fetch AWS config due to err: %v", err)
@@ -27,7 +33,7 @@ func main() {
 	AWSConfig = awsCfg
 
 	// Setup network port management config
-	portCfg, err := enclave.LoadPortConfig("/root/config.yaml")
+	portCfg, err := enclave.LoadPortConfig(*configPath)
 
 	if err != nil {
 		log.Errorf("Could not fetch Port config due to err: %v", err)
@@ -36,7 +42,7 @@ func main() {
 
 	PortsConfig = portCfg
 
-	_, err = privysigner.InitNewPrivyClient(PortsConfig, AWSConfig, "prod")
+	err = privysigner.InitNewPrivyClient(PortsConfig, AWSConfig, "prod")
 
 	if err != nil {
 		log.Fatalf("Error creating privy cli: %v", err)

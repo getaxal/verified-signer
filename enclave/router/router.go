@@ -13,11 +13,7 @@ func InitRouter(routerVsockPort uint32) {
 	r := gin.Default()
 
 	// Init routes
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "pong from tee",
-		})
-	})
+	initRoutes(r)
 
 	// Create vsock listener
 	listener, err := vsock.Listen(routerVsockPort, &vsock.Config{})
@@ -32,5 +28,27 @@ func InitRouter(routerVsockPort uint32) {
 	// Serve HTTP over vsock
 	if err := http.Serve(listener, r); err != nil {
 		log.Panicf("Error with starting http server with error: %v", err)
+	}
+}
+
+// Initiate the API routes here
+func initRoutes(r *gin.Engine) {
+	v1 := r.Group("/api/v1")
+	{
+		// APIs for privy signing
+		signerGroup := v1.Group("/signer")
+		{
+			ethGroup := signerGroup.Group("/eth")
+			{
+				ethGroup.POST("/ethSignTx/:userId", EthTransactionSignTxHandler)
+				ethGroup.POST("/ethSendTx/:userId", EthTransactionSendTxHandler)
+				ethGroup.POST("/personalSign/:userId", EthPersonalSignTxHandler)
+			}
+		}
+
+		healthGroup := v1.Group("/health")
+		{
+			healthGroup.GET("/ping", PingCheckHandler)
+		}
 	}
 }
