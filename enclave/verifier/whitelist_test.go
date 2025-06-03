@@ -4,7 +4,7 @@ import "testing"
 
 func TestInitWhitelist(t *testing.T) {
 	// Test initialization
-	InitWhitelist()
+	verifiedAddresses := InitWhitelist()
 
 	if verifiedAddresses == nil {
 		t.Fatal("InitWhitelist() should initialize verifiedAddresses")
@@ -21,7 +21,7 @@ func TestInitWhitelist(t *testing.T) {
 
 func TestAddToWhiteList(t *testing.T) {
 	// Setup
-	InitWhitelist()
+	verifiedAddresses := InitWhitelist()
 
 	testCases := []struct {
 		name    string
@@ -63,7 +63,7 @@ func TestAddToWhiteList(t *testing.T) {
 
 func TestRemoveFromWhiteList(t *testing.T) {
 	// Setup
-	InitWhitelist()
+	verifiedAddresses := InitWhitelist()
 	address := "0x742d35Cc6634C0532925a3b8D93b9f2d4d22aA4e"
 
 	// Add address first
@@ -90,7 +90,7 @@ func TestRemoveFromWhiteList(t *testing.T) {
 
 func TestRemoveNonExistentAddress(t *testing.T) {
 	// Setup
-	InitWhitelist()
+	verifiedAddresses := InitWhitelist()
 	address := "0xnonexistent"
 
 	// Remove address that was never added
@@ -109,7 +109,7 @@ func TestRemoveNonExistentAddress(t *testing.T) {
 
 func TestIsWhitelisted(t *testing.T) {
 	// Setup
-	InitWhitelist()
+	verifiedAddresses := InitWhitelist()
 
 	testCases := []struct {
 		name     string
@@ -162,7 +162,7 @@ func TestIsWhitelisted(t *testing.T) {
 
 func TestWhiteListWorkflow(t *testing.T) {
 	// Test complete workflow
-	InitWhitelist()
+	verifiedAddresses := InitWhitelist()
 
 	addresses := []string{
 		"0x742d35Cc6634C0532925a3b8D93b9f2d4d22aA4e",
@@ -209,7 +209,7 @@ func TestWhiteListWorkflow(t *testing.T) {
 
 func TestConcurrentAccess(t *testing.T) {
 	// Basic test for potential race conditions
-	InitWhitelist()
+	verifiedAddresses := InitWhitelist()
 
 	address := "0x742d35Cc6634C0532925a3b8D93b9f2d4d22aA4e"
 

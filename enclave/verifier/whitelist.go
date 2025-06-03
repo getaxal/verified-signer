@@ -1,15 +1,13 @@
 package verifier
 
-var verifiedAddresses *WhiteList
-
 type WhiteList struct {
 	addressList map[string]bool
 }
 
 // Initiates the Whitelist for Pools and contract addresses
-func InitWhitelist() {
+func InitWhitelist() *WhiteList {
 	set := make(map[string]bool)
-	verifiedAddresses = &WhiteList{
+	return &WhiteList{
 		addressList: set,
 	}
 }
