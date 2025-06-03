@@ -33,7 +33,7 @@ func main() {
 	AWSConfig = awsCfg
 
 	// Setup network port management config
-	portCfg, err := enclave.LoadPortConfig("/root/config.yaml")
+	portCfg, err := enclave.LoadPortConfig(*configPath)
 
 	if err != nil {
 		log.Errorf("Could not fetch Port config due to err: %v", err)
@@ -42,7 +42,7 @@ func main() {
 
 	PortsConfig = portCfg
 
-	_, err = privysigner.InitNewPrivyClient(PortsConfig, AWSConfig, "prod")
+	err = privysigner.InitNewPrivyClient(PortsConfig, AWSConfig, "prod")
 
 	if err != nil {
 		log.Fatalf("Error creating privy cli: %v", err)

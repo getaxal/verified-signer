@@ -3,6 +3,7 @@ package network
 import (
 	"crypto/tls"
 	"net/http"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -25,5 +26,6 @@ func InitHttpsClientWithTLSVsockTransport(vsockPort uint32, servername string) *
 
 	return &http.Client{
 		Transport: transport,
+		Timeout:   30 * time.Second,
 	}
 }
