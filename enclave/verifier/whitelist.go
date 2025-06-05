@@ -30,11 +30,6 @@ func (wl *WhiteList) addToWhiteList(address string) {
 	(wl.addressList)[address] = true
 }
 
-// Adds an address from the whitelist
-func (wl *WhiteList) removeFromWhiteList(address string) {
-	(wl.addressList)[address] = false
-}
-
 // Returns if the address specified is in the whitelist
 func (wl *WhiteList) IsWhitelisted(address string) bool {
 	return (wl.addressList)[address]
