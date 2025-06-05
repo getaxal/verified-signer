@@ -17,6 +17,13 @@ type EthTransaction struct {
 	Value                *int64 `json:"value,omitempty"`
 }
 
+// Interface for all Eth transaction requests
+type EthTxRequest interface {
+	ValidateTxRequest() error
+	GetMethod() string
+	GetTransaction() *EthTransaction
+}
+
 // Request struct for eth_signTransaction
 // Example would be:
 //
@@ -64,6 +71,14 @@ func (req *EthSignTransactionRequest) ValidateTxRequest() error {
 	}
 
 	return nil
+}
+
+func (req *EthSignTransactionRequest) GetTransaction() *EthTransaction {
+	return &req.Params.Transaction
+}
+
+func (req *EthSignTransactionRequest) GetMethod() string {
+	return req.Method
 }
 
 // Request struct for eth_sendTransaction
@@ -123,6 +138,14 @@ func (req *EthSendTransactionRequest) ValidateTxRequest() error {
 	return nil
 }
 
+func (req *EthSendTransactionRequest) GetTransaction() *EthTransaction {
+	return &req.Params.Transaction
+}
+
+func (req *EthSendTransactionRequest) GetMethod() string {
+	return req.Method
+}
+
 type EthPersonalSignRequest struct {
 	Method string `json:"method"`
 	Params struct {
@@ -159,6 +182,14 @@ func (req *EthPersonalSignRequest) ValidateTxRequest() error {
 	}
 
 	return nil
+}
+
+func (req *EthPersonalSignRequest) GetTransaction() *EthTransaction {
+	return nil
+}
+
+func (req *EthPersonalSignRequest) GetMethod() string {
+	return req.Method
 }
 
 // EthTransactionSendResponseData represents the data field in the response to the eth_sendTransaction request
