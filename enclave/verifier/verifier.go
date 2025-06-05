@@ -1,7 +1,11 @@
 package verifier
 
 import (
+	"fmt"
+
+	"github.com/getaxal/verified-signer/enclave"
 	data "github.com/getaxal/verified-signer/enclave/privy-signer/data"
+	log "github.com/sirupsen/logrus"
 )
 
 type Verifier struct {
@@ -9,10 +13,17 @@ type Verifier struct {
 }
 
 // Init a new verifier
-func InitVerifier() *Verifier {
-	return &Verifier{
-		verifiedAddresses: InitWhitelist(),
+func InitVerifieFromVerifierConfig(cfgPath string) (*Verifier, error) {
+	cfg, err := enclave.LoadVerifierConfig(cfgPath)
+
+	if err != nil {
+		log.Errorf("Unable to load config from %s", cfgPath)
+		return nil, fmt.Errorf("Unable to init verifier")
 	}
+
+	return &Verifier{
+		verifiedAddresses: InitWhitelistFromConfig(&cfg.Whitelist),
+	}, nil
 }
 
 func (v *Verifier) VerifyEthTxRequest(req data.EthTxRequest) bool {
