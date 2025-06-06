@@ -581,7 +581,7 @@ func TestNewSignTransactionRequest(t *testing.T) {
 		Value: enclave.ToInt64Ptr(1000000000000000000),
 	}
 
-	req := NewSignTransactionRequest(tx)
+	req := NewEthSignTransactionRequest(tx)
 
 	require.NotNil(t, req)
 	assert.Equal(t, "eth_signTransaction", req.Method)
@@ -601,7 +601,7 @@ func TestNewSendTransactionRequest(t *testing.T) {
 	caip2 := "eip155:11155111"
 	chainType := "ethereum"
 
-	req := NewSendTransactionRequest(tx, caip2, chainType)
+	req := NewEthSendTransactionRequest(tx, caip2, chainType)
 
 	require.NotNil(t, req)
 	assert.Equal(t, "eth_sendTransaction", req.Method)
@@ -618,7 +618,7 @@ func TestNewSendTransactionRequest(t *testing.T) {
 func TestNewPersonalSignRequest(t *testing.T) {
 	message := "Hello, World!"
 
-	req := NewPersonalSignRequest(message)
+	req := NewEthPersonalSignRequest(message)
 
 	require.NotNil(t, req)
 	assert.Equal(t, "personal_sign", req.Method)
@@ -705,11 +705,11 @@ func TestValidation_WithComplexTransactionData(t *testing.T) {
 		Value:                enclave.ToInt64Ptr(1000000000000000000),
 	}
 
-	signReq := NewSignTransactionRequest(tx)
+	signReq := NewEthSignTransactionRequest(tx)
 	err := signReq.ValidateTxRequest()
 	assert.NoError(t, err)
 
-	sendReq := NewSendTransactionRequest(tx, "eip155:11155111", "ethereum")
+	sendReq := NewEthSendTransactionRequest(tx, "eip155:11155111", "ethereum")
 	err = sendReq.ValidateTxRequest()
 	assert.NoError(t, err)
 }
