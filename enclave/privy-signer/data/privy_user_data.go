@@ -21,6 +21,17 @@ func (pu *PrivyUser) GetUsersEthDelegatedWallet() *LinkedAccount {
 	return nil
 }
 
+// Fetches the users sol delegated wallet, this is a wallet that simply is both an solana wallet as well as a delegated wallet
+func (pu *PrivyUser) GetUsersSolDelegatedWallet() *LinkedAccount {
+	for _, acc := range pu.LinkedAccounts {
+		if acc.Delegated && acc.ChainType == "solana" {
+			return &acc
+		}
+	}
+
+	return nil
+}
+
 // LinkedAccount represents different types of linked accounts (email, wallet, etc.)
 type LinkedAccount struct {
 	// Common fields for all account types

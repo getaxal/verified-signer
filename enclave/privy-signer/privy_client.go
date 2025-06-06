@@ -63,7 +63,7 @@ func (cli *PrivyClient) addStandardPrivyHeaders(req *http.Request) {
 	req.Header.Add("Authorization", "Basic "+cli.authorization)
 }
 
-// Preps Eth Transaction signing request by preparing the body and the headers.
+// Preps Transaction signing request by preparing the body and the headers.
 // The headers are:
 //
 //	{
@@ -72,7 +72,7 @@ func (cli *PrivyClient) addStandardPrivyHeaders(req *http.Request) {
 //		"Content-Type" : "application/json"
 //		"privy-authorization-signature" : "your-auth-signature" //get it using authorizationsignature.GetAuthorizationSignature
 //	}
-func (cli *PrivyClient) prepEthSigningTxRequest(body interface{}, walletId string) (*http.Request, error) {
+func (cli *PrivyClient) prepSigningTxRequest(body interface{}, walletId string) (*http.Request, error) {
 	// format url
 	url := fmt.Sprintf("%s%s", cli.baseUrl, SIGN_TX_PATH.Build(walletId))
 
@@ -146,6 +146,55 @@ func handlePrivyError(res *http.Response) *data.HttpError {
 	}
 }
 
+// Helper function to create internal server error
+func (cli *PrivyClient) createInternalServerError() *data.HttpError {
+	return &data.HttpError{
+		Code: 500,
+		Message: data.Message{
+			Message: "Internal Server Error",
+		},
+	}
+}
+
+// Generic function to handle HTTP requests and responses for signing requests
+func (cli *PrivyClient) executeSigningRequest(txRequest interface{}, walletId string, response interface{}) *data.HttpError {
+	req, err := cli.prepSigningTxRequest(txRequest, walletId)
+	if err != nil {
+		log.Errorf("Error initiating signing request: %v", err)
+		return cli.createInternalServerError()
+	}
+
+	res, err := cli.client.Do(req)
+	if err != nil {
+		log.Errorf("Error making request: %v", err)
+		return cli.createInternalServerError()
+	}
+	defer res.Body.Close()
+
+	// Check status code
+	if res.StatusCode != http.StatusOK {
+		log.Errorf("Received status code %d", res.StatusCode)
+		httpErr := handlePrivyError(res)
+		return httpErr
+	}
+
+	// Read response body
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		log.Errorf("Error reading response body: %v", err)
+		return cli.createInternalServerError()
+	}
+
+	// Unmarshal response
+	err = json.Unmarshal(body, response)
+	if err != nil {
+		log.Errorf("Error unmarshalling response body: %v", err)
+		return cli.createInternalServerError()
+	}
+
+	return nil
+}
+
 // Gets a user given a Privy userID
 func (cli *PrivyClient) GetUser(userId string) (*data.PrivyUser, *data.HttpError) {
 	url := fmt.Sprintf("%s%s", cli.baseUrl, GET_USER_PATH.Build(userId))
@@ -206,189 +255,4 @@ func (cli *PrivyClient) GetUser(userId string) (*data.PrivyUser, *data.HttpError
 	}
 
 	return &user, nil
-}
-
-// Signs a transaction using the eth_signTransaction method
-func (cli *PrivyClient) EthSignTransaction(txRequest *data.EthSignTransactionRequest, wallet_id string) (*data.EthSignTransactionResponse, *data.HttpError) {
-	req, err := cli.prepEthSigningTxRequest(*txRequest, wallet_id)
-
-	if err != nil {
-		log.Errorf("Error initiating signing request")
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	res, err := cli.client.Do(req)
-	if err != nil {
-		log.Errorf("Error making request: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	defer res.Body.Close()
-
-	// Check status code if not ok we parse the error message for logging
-	if res.StatusCode != http.StatusOK {
-		log.Errorf("Received status code %d", res.StatusCode)
-		httpErr := handlePrivyError(res)
-		log.Infof("Err: %+v", httpErr)
-		return nil, httpErr
-	}
-
-	// Read response body
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		log.Errorf("Error reading response body: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	var resp data.EthSignTransactionResponse
-	err = json.Unmarshal(body, &resp)
-	if err != nil {
-		log.Errorf("Error unmarshalling response body: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	return &resp, nil
-}
-
-// Signs and sends a transaction using the eth_sendTransaction method. A successful response indicates that the transaction has been broadcasted to the network.
-// Transactions may get broadcasted but still fail to be confirmed by the network.
-func (cli *PrivyClient) EthSendTransaction(txRequest *data.EthSendTransactionRequest, wallet_id string) (*data.EthSendTransactionResponse, *data.HttpError) {
-	req, err := cli.prepEthSigningTxRequest(*txRequest, wallet_id)
-
-	if err != nil {
-		log.Errorf("Error initiating signing request")
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	res, err := cli.client.Do(req)
-	if err != nil {
-		log.Errorf("Error making request: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	defer res.Body.Close()
-
-	// Check status code
-	if res.StatusCode != http.StatusOK {
-		log.Errorf("Received status code %d", res.StatusCode)
-		httpErr := handlePrivyError(res)
-		return nil, httpErr
-	}
-
-	// Read response body
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		log.Errorf("Error reading response body: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	var resp data.EthSendTransactionResponse
-	err = json.Unmarshal(body, &resp)
-	if err != nil {
-		log.Errorf("Error unmarshalling response body: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	return &resp, nil
-}
-
-// Signs a transaction using the eth personal sign method
-func (cli *PrivyClient) EthPersonalSign(txRequest *data.EthPersonalSignRequest, wallet_id string) (*data.EthPersonalSignResponse, *data.HttpError) {
-	req, err := cli.prepEthSigningTxRequest(*txRequest, wallet_id)
-
-	if err != nil {
-		log.Errorf("Error initiating signing request with err: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	res, err := cli.client.Do(req)
-	if err != nil {
-		log.Errorf("Error making request: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	defer res.Body.Close()
-
-	// Check status code if not ok we parse the error message for logging
-	if res.StatusCode != http.StatusOK {
-		log.Errorf("Received status code %d", res.StatusCode)
-		httpErr := handlePrivyError(res)
-		return nil, httpErr
-	}
-
-	// Read response body
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		log.Errorf("Error reading response body: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	var resp data.EthPersonalSignResponse
-	err = json.Unmarshal(body, &resp)
-	if err != nil {
-		log.Errorf("Error unmarshalling response body: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	return &resp, nil
 }
