@@ -9,15 +9,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Handler for a simple Ping health check
-func PingCheckHandler(c *gin.Context) {
-	resp := privydata.Message{
-		Message: "pong from tee",
-	}
-
-	c.JSON(http.StatusOK, resp)
-}
-
 // Handles the Ethereum personalSign method. It takes the users userId as a path param and a EthPersonalSignRequest as the json body.
 // It fetches the users delegated eth wallet from the privy backend.
 func EthPersonalSignTxHandler(c *gin.Context) {
