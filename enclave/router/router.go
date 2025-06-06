@@ -46,6 +46,13 @@ func initRoutes(r *gin.Engine) {
 			}
 		}
 
+		//APIs for getting TEE attestation
+		attestationGroup := v1.Group("/attest")
+		{
+			attestationGroup.GET("/bytes/:nonce", GetAttestationDocHandler)
+			attestationGroup.GET("/doc/:nonce", GetAttestationDocHandler)
+		}
+
 		healthGroup := v1.Group("/health")
 		{
 			healthGroup.GET("/ping", PingCheckHandler)
