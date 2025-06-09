@@ -63,3 +63,30 @@ func LoadVerifierConfig(configPath string) (*VerifierConfig, error) {
 
 	return &config, nil
 }
+
+// Config for getting what env the server is on
+type EnvironmentConfig struct {
+	Environment string `yaml:"environment"`
+}
+
+
+// Loads Environment config from a config path
+func LoadEnvConfig(configPath string) (*EnvironmentConfig, error) {
+	log.Info("Loading environment config for the compute environment")
+
+	type Config struct {
+		Environment EnvironmentConfig `yaml:"environment"`
+	}
+
+	var config Config
+	if err := configor.Load(&config, configPath); err != nil {
+		return nil, fmt.Errorf("failed to load config from %s: %w", configPath, err)
+	}
+
+	// Incorrect cfg path triggers here for configor, it will just load empty config
+	if config.Environment.Environment == "" {
+		return nil, fmt.Errorf("no env loaded from: %s", configPath)
+	}
+
+	return &config.Environment, nil
+}

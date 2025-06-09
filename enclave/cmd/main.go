@@ -42,7 +42,14 @@ func main() {
 
 	PortsConfig = portCfg
 
-	err = privysigner.InitNewPrivyClient(PortsConfig, AWSConfig, "prod")
+	envCfg, err := enclave.LoadEnvConfig(*configPath)
+
+	if err != nil {
+		log.Errorf("Could not fetch Env config due to err: %v", err)
+		return
+	}
+
+	err = privysigner.InitNewPrivyClient(PortsConfig, AWSConfig, envCfg)
 
 	if err != nil {
 		log.Fatalf("Error creating privy cli: %v", err)

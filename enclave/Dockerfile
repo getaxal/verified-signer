@@ -1,33 +1,52 @@
+# syntax=docker/dockerfile:1
+
 # Stage 1: Build
 FROM golang:1.24-alpine AS builder
 
-# Install git
-RUN apk add --no-cache git
+# Install necessary packages
+RUN apk add --no-cache git openssh-client
 
-# Configure git to use token
-ARG GITHUB_TOKEN
-RUN git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+# Configure SSH for GitHub
+RUN mkdir -p -m 0700 /root/.ssh && \
+    ssh-keyscan github.com >> /root/.ssh/known_hosts
+
+# Configure Git to use SSH instead of HTTPS
+RUN git config --global url."git@github.com:".insteadOf "https://github.com/"
 
 # Set up Go private module
 ENV GOPRIVATE=github.com/getaxal/*
+ENV GOPROXY=direct
+ENV GOSUMDB=off
 
 WORKDIR /app
 
-# Copy enclave directory contents
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+
+# Download dependencies with SSH mount
+RUN --mount=type=ssh,id=default \
+    go mod download
+
+# Copy source code
 COPY . .
 
-# Download dependencies and build
-RUN go mod download
+# Build the application
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -a -installsuffix cgo -o main ./cmd
 
 # Stage 2: Runtime image
 FROM alpine:latest
+
 WORKDIR /root/
 
+# Install CA certificates for HTTPS requests
 RUN apk add --no-cache ca-certificates
 
+# Copy the binary from builder stage
 COPY --from=builder /app/main .
 RUN chmod +x ./main
 
+# Copy config file
 COPY config.yaml /root/config.yaml
+
+# Run the application
 CMD ["/root/main", "-config", "/root/config.yaml"]
