@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/getaxal/verified-signer/common/aws"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -54,12 +55,25 @@ type EC2Credentials struct {
 
 // Creates a new Secret Manager instance with specified environment
 // environment should be "dev", "prod", or "local"
-func NewSecretManager(cfg SecretManagerConfig, environment string) *SecretManager {
-	return &SecretManager{
+func NewSecretManager(cfgPath string, environment string) (*SecretManager, error) {
+	sm := &SecretManager{
 		Client:      &http.Client{Timeout: 30 * time.Second},
-		Config:      &cfg,
 		Environment: environment,
 	}
+
+	creds, err := sm.getCredentials(cfgPath)
+	if err != nil {
+		log.Errorf("Unable to create a SM manager with err: %v", err)
+		return nil, fmt.Errorf("Unable to create a New Secrets Manager Client")
+	}
+
+	sm.Config = &SecretManagerConfig{
+		Credentials: *creds,
+		Region:      creds.Region,
+	}
+
+	return sm, nil
+
 }
 
 // getEC2Credentials fetches temporary credentials from EC2 instance metadata
@@ -138,33 +152,31 @@ func (sm *SecretManager) getEC2Credentials() (*aws.AWSCredentials, error) {
 }
 
 // getCredentials returns the appropriate credentials based on environment
-func (sm *SecretManager) getCredentials() (*aws.AWSCredentials, error) {
+func (sm *SecretManager) getCredentials(cfgPath string) (*aws.AWSCredentials, error) {
 	switch sm.Environment {
 	case "dev", "prod":
 		// Use IAM role credentials from EC2 metadata
 		return sm.getEC2Credentials()
 	case "local":
-		// Use environment variables or existing config
-		if sm.Config.Credentials.AccessKey != "" && sm.Config.Credentials.AccessSecret != "" && sm.Config.Credentials.Region.String() != "" {
-			return &sm.Config.Credentials, nil
+		creds, err := aws.NewAWSConfigFromYAML(cfgPath)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to fetch local credentials")
 		}
-		return nil, fmt.Errorf("Unable to fetch local credentials")
+
+		return &creds.AWSCredentials, nil
 	default:
-		// Use environment variables or existing config
-		if sm.Config.Credentials.AccessKey != "" && sm.Config.Credentials.AccessSecret != "" && sm.Config.Credentials.Region.String() != "" {
-			return &sm.Config.Credentials, nil
+		creds, err := aws.NewAWSConfigFromYAML(cfgPath)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to fetch local credentials")
 		}
-		return nil, fmt.Errorf("Unable to fetch local credentials")
+
+		return &creds.AWSCredentials, nil
 	}
 }
 
 // Use this function to sign the HTTP request to AWS. Uses AWS sig4 found here https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_sigv.html.
 func (sm *SecretManager) signRequest(req *http.Request, payload string) error {
-	// Get appropriate credentials based on environment
-	creds, err := sm.getCredentials()
-	if err != nil {
-		return fmt.Errorf("failed to get credentials: %w", err)
-	}
+	creds := sm.Config.Credentials
 
 	t := time.Now().UTC()
 	amzDate := t.Format("20060102T150405Z")

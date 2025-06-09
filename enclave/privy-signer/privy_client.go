@@ -14,8 +14,6 @@ import (
 
 	authorizationsignature "github.com/getaxal/verified-signer/enclave/privy-signer/authorization_signature"
 
-	"github.com/getaxal/verified-signer/common/aws"
-
 	log "github.com/sirupsen/logrus"
 )
 
@@ -29,9 +27,10 @@ type PrivyClient struct {
 }
 
 // Inits a new Privy Client with a custom Transport Layer service that routes https through the privyAPIVsockPort. It initates it to privysigner.PrivyCli.
-func InitNewPrivyClient(portsCfg *enclave.PortConfig, awsConfig *aws.AWSConfig, environment *enclave.EnvironmentConfig) error {
+func InitNewPrivyClient(configPath string, portsCfg *enclave.PortConfig, environment *enclave.EnvironmentConfig) error {
 	// Setup Privy Config for privy api details
-	privyConfig, err := InitPrivyConfig(*awsConfig, portsCfg.AWSSecretManagerVsockPort, environment.GetEnv())
+	log.Infof("Setting up privy cfg in %s env", environment.GetEnv())
+	privyConfig, err := InitPrivyConfig(configPath, portsCfg.AWSSecretManagerVsockPort, environment.GetEnv())
 
 	if err != nil {
 		log.Errorf("Could not fetch Privy config due to err: %v", err)
