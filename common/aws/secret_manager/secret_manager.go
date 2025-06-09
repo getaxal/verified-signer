@@ -82,11 +82,13 @@ func NewSecretManager(cfgPath string, environment string, smPort uint32, ec2Port
 // getEC2Credentials fetches temporary credentials from EC2 instance metadata
 func (sm *SecretManager) getEC2Credentials() (*aws.AWSCredentials, error) {
 	// Get IMDSv2 token for secure access
-	tokenReq, err := http.NewRequest("PUT", ec2MetadataTokenURL, nil)
+	body := strings.NewReader("x")
+	tokenReq, err := http.NewRequest("PUT", ec2MetadataTokenURL, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create token request: %w", err)
 	}
 	tokenReq.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
+	tokenReq.Header.Set("Content-Length", "0")
 
 	tokenResp, err := sm.EC2CredentialsClient.Do(tokenReq)
 	if err != nil {
@@ -159,6 +161,7 @@ func (sm *SecretManager) getCredentials(cfgPath string) (*aws.AWSCredentials, er
 	switch sm.Environment {
 	case "dev", "prod":
 		// Use IAM role credentials from EC2 metadata
+		log.Info("Fetching ec2 credentials")
 		return sm.getEC2Credentials()
 	case "local":
 		creds, err := aws.NewAWSConfigFromYAML(cfgPath)

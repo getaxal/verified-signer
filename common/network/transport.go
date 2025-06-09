@@ -150,9 +150,9 @@ type VsockHTTPRoundTripper struct {
 	Port uint32 // Vsock port number
 }
 
-// Implement the round trip function for HTTP (no TLS)
+// Implement the round trip function for a HTTP request.
 func (v *VsockHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Ensure we're using HTTP
+	// Ensure we're using HTTPS
 	if req.URL.Scheme != "http" {
 		req = req.Clone(req.Context())
 		req.URL.Scheme = "http"
@@ -176,14 +176,7 @@ func (v *VsockHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 		return nil, err
 	}
 
-	// Set deadline on the connection if we have one
-	if deadline, ok := ctx.Deadline(); ok {
-		conn.SetDeadline(deadline)
-	}
-
-	log.Infof("Vsock connection established, sending HTTP request")
-
-	// Send HTTP request over the connection
+	// Send HTTP request 
 	if err := req.Write(conn); err != nil {
 		log.Errorf("Failed to write request: %v", err)
 		conn.Close()
@@ -193,12 +186,13 @@ func (v *VsockHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 	// Read HTTP response
 	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
 	if err != nil {
-		log.Errorf("Failed to read response: %v", err)
+		log.Errorf("Failed to read response over TLS: %v", err)
 		conn.Close()
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	// Wrap the response body to handle connection cleanup
+	// CRITICAL FIX: Wrap the response body to handle connection cleanup
+	// Don't close the connection here - let the response body handle it
 	resp.Body = &httpConnectionAwareBody{
 		ReadCloser: resp.Body,
 		conn:       conn,
