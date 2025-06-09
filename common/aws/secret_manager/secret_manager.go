@@ -88,7 +88,7 @@ func (sm *SecretManager) getEC2Credentials() (*aws.AWSCredentials, error) {
 	}
 	tokenReq.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
 
-	tokenResp, err := sm.SmClient.Do(tokenReq)
+	tokenResp, err := sm.EC2CredentialsClient.Do(tokenReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metadata token: %w", err)
 	}
@@ -110,7 +110,7 @@ func (sm *SecretManager) getEC2Credentials() (*aws.AWSCredentials, error) {
 	}
 	roleReq.Header.Set("X-aws-ec2-metadata-token", string(token))
 
-	roleResp, err := sm.SmClient.Do(roleReq)
+	roleResp, err := sm.EC2CredentialsClient.Do(roleReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get IAM role: %w", err)
 	}
@@ -132,7 +132,7 @@ func (sm *SecretManager) getEC2Credentials() (*aws.AWSCredentials, error) {
 	}
 	credReq.Header.Set("X-aws-ec2-metadata-token", string(token))
 
-	credResp, err := sm.SmClient.Do(credReq)
+	credResp, err := sm.EC2CredentialsClient.Do(credReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get credentials: %w", err)
 	}

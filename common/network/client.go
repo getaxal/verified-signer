@@ -38,7 +38,7 @@ func InitHttpClientWithVsockTransport(vsockPort uint32) *http.Client {
 		Port: vsockPort,
 	}
 
-	log.Infof("HTTPS client initialized for with VSock transport on port %d", vsockPort)
+	log.Infof("HTTP client initialized for with VSock transport on port %d", vsockPort)
 
 	return &http.Client{
 		Transport: transport,
