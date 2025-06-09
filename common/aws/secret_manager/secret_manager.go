@@ -59,7 +59,6 @@ type EC2Credentials struct {
 // environment should be "dev", "prod", or "local"
 func NewSecretManager(cfgPath string, environment string, smPort uint32, ec2Port uint32) (*SecretManager, error) {
 	sm := &SecretManager{
-		SmClient:             network.InitHttpsClientWithTLSVsockTransport(smPort, fmt.Sprintf("secretsmanager.%s.amazonaws.com", aws.USEast2)),
 		EC2CredentialsClient: network.InitHttpClientWithVsockTransport(ec2Port),
 		Environment:          environment,
 	}
@@ -74,6 +73,14 @@ func NewSecretManager(cfgPath string, environment string, smPort uint32, ec2Port
 		Credentials: *creds,
 		Region:      creds.Region,
 	}
+
+	// Default to us east 2
+	if sm.Config.Region == "" {
+		sm.Config.Region = aws.USEast2
+		sm.Config.Credentials.Region = aws.USEast2
+	}
+
+	sm.SmClient = network.InitHttpsClientWithTLSVsockTransport(smPort, sm.Config.GetSecretManagerEndpoint())
 
 	return sm, nil
 
@@ -151,6 +158,7 @@ func (sm *SecretManager) getEC2Credentials() (*aws.AWSCredentials, error) {
 		AccessKey:    ec2Creds.AccessKeyId,
 		AccessSecret: ec2Creds.SecretAccessKey,
 		SessionToken: ec2Creds.Token,
+		Region:       aws.USEast2,
 	}, nil
 }
 
