@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/getaxal/verified-signer/common/aws"
+	"github.com/getaxal/verified-signer/common/network"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -26,9 +27,10 @@ const (
 )
 
 type SecretManager struct {
-	Client      *http.Client
-	Config      *SecretManagerConfig
-	Environment string // "local", "dev", or "prod"
+	SmClient             *http.Client
+	EC2CredentialsClient *http.Client
+	Config               *SecretManagerConfig
+	Environment          string // "local", "dev", or "prod"
 }
 
 // GetSecretValueRequest represents the request payload
@@ -55,10 +57,11 @@ type EC2Credentials struct {
 
 // Creates a new Secret Manager instance with specified environment
 // environment should be "dev", "prod", or "local"
-func NewSecretManager(cfgPath string, environment string) (*SecretManager, error) {
+func NewSecretManager(cfgPath string, environment string, smPort uint32, ec2Port uint32) (*SecretManager, error) {
 	sm := &SecretManager{
-		Client:      &http.Client{Timeout: 30 * time.Second},
-		Environment: environment,
+		SmClient:             network.InitHttpsClientWithTLSVsockTransport(smPort, fmt.Sprintf("secretsmanager.%s.amazonaws.com", aws.USEast2)),
+		EC2CredentialsClient: network.InitHttpsClientWithTLSVsockTransport(ec2Port, "169.254.169.254"),
+		Environment:          environment,
 	}
 
 	creds, err := sm.getCredentials(cfgPath)
@@ -85,7 +88,7 @@ func (sm *SecretManager) getEC2Credentials() (*aws.AWSCredentials, error) {
 	}
 	tokenReq.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
 
-	tokenResp, err := sm.Client.Do(tokenReq)
+	tokenResp, err := sm.SmClient.Do(tokenReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metadata token: %w", err)
 	}
@@ -107,7 +110,7 @@ func (sm *SecretManager) getEC2Credentials() (*aws.AWSCredentials, error) {
 	}
 	roleReq.Header.Set("X-aws-ec2-metadata-token", string(token))
 
-	roleResp, err := sm.Client.Do(roleReq)
+	roleResp, err := sm.SmClient.Do(roleReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get IAM role: %w", err)
 	}
@@ -129,7 +132,7 @@ func (sm *SecretManager) getEC2Credentials() (*aws.AWSCredentials, error) {
 	}
 	credReq.Header.Set("X-aws-ec2-metadata-token", string(token))
 
-	credResp, err := sm.Client.Do(credReq)
+	credResp, err := sm.SmClient.Do(credReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get credentials: %w", err)
 	}
@@ -270,7 +273,7 @@ func (sm *SecretManager) GetSecret(ctx context.Context, secretName string) (*Get
 	}
 
 	// Make the request
-	resp, err := sm.Client.Do(req)
+	resp, err := sm.SmClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}

@@ -11,6 +11,7 @@ type PortConfig struct {
 	AWSSecretManagerVsockPort uint32 `yaml:"aws_secret_manager_vsock_port"`
 	PrivyAPIVsockPort         uint32 `yaml:"privy_api_vsock_port"`
 	RouterVsockPort           uint32 `yaml:"router_vsock_port"`
+	Ec2CredsVsockPort         uint32 `yaml:"ec2_creds_vsock_port"`
 }
 
 // Loads Ports config from a config path

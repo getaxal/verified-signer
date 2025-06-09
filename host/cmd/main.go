@@ -20,6 +20,8 @@ func main() {
 	// Proxy for TCP to Vsock for Backend to reach the enclave
 	go network.InitTcpToVsockProxy(ctx, 8080, 50003)
 
+	go network.InitVsockToTcpProxy(ctx, 50004, 80, "http://169.254.169.254")
+
 	for {
 		time.Sleep(time.Hour)
 	}

@@ -9,8 +9,9 @@ import (
 	"net/http"
 
 	"github.com/getaxal/verified-signer/enclave"
-	"github.com/getaxal/verified-signer/enclave/network"
 	"github.com/getaxal/verified-signer/enclave/privy-signer/data"
+
+	"github.com/getaxal/verified-signer/common/network"
 
 	authorizationsignature "github.com/getaxal/verified-signer/enclave/privy-signer/authorization_signature"
 
@@ -30,7 +31,7 @@ type PrivyClient struct {
 func InitNewPrivyClient(configPath string, portsCfg *enclave.PortConfig, environment *enclave.EnvironmentConfig) error {
 	// Setup Privy Config for privy api details
 	log.Infof("Setting up privy cfg in %s env", environment.GetEnv())
-	privyConfig, err := InitPrivyConfig(configPath, portsCfg.AWSSecretManagerVsockPort, environment.GetEnv())
+	privyConfig, err := InitPrivyConfig(configPath, portsCfg.AWSSecretManagerVsockPort, portsCfg.Ec2CredsVsockPort, environment.GetEnv())
 
 	if err != nil {
 		log.Errorf("Could not fetch Privy config due to err: %v", err)

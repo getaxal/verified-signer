@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/getaxal/verified-signer/enclave/network"
-
 	log "github.com/sirupsen/logrus"
 
 	secretmanager "github.com/getaxal/verified-signer/common/aws/secret_manager"
@@ -22,15 +20,13 @@ type PrivyConfig struct {
 
 // Init Privy config by fetching details from AWS SecretsManager using a Vsock HTTPS client. We need to provide a Vsock port for AWS communication for
 // this client.
-func InitPrivyConfig(configPath string, awsSecretsManagerPort uint32, environment string) (*PrivyConfig, error) {
+func InitPrivyConfig(configPath string, awsSecretsManagerPort uint32, ec2Port uint32, environment string) (*PrivyConfig, error) {
 	log.Infof("Loaded secret manager config")
 
-	sm, err := secretmanager.NewSecretManager(configPath, environment)
+	sm, err := secretmanager.NewSecretManager(configPath, environment, awsSecretsManagerPort, ec2Port)
 	if err != nil {
 		return nil, err
 	}
-
-	sm.Client = network.InitHttpsClientWithTLSVsockTransport(awsSecretsManagerPort, fmt.Sprintf("secretsmanager.%s.amazonaws.com", sm.Config.Region.String()))
 
 	log.Info("Fetching Privy config from Secret Manager")
 
