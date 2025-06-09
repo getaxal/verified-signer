@@ -60,7 +60,7 @@ type EC2Credentials struct {
 func NewSecretManager(cfgPath string, environment string, smPort uint32, ec2Port uint32) (*SecretManager, error) {
 	sm := &SecretManager{
 		SmClient:             network.InitHttpsClientWithTLSVsockTransport(smPort, fmt.Sprintf("secretsmanager.%s.amazonaws.com", aws.USEast2)),
-		EC2CredentialsClient: network.InitHttpsClientWithTLSVsockTransport(ec2Port, "169.254.169.254"),
+		EC2CredentialsClient: network.InitHttpClientWithVsockTransport(ec2Port),
 		Environment:          environment,
 	}
 
