@@ -80,7 +80,7 @@ func NewSecretManager(cfgPath string, environment string, smPort uint32, ec2Port
 		sm.Config.Credentials.Region = aws.USEast2
 	}
 
-	sm.SmClient = network.InitHttpsClientWithTLSVsockTransport(smPort, sm.Config.GetSecretManagerEndpoint())
+	sm.SmClient = network.InitHttpsClientWithTLSVsockTransport(smPort, fmt.Sprintf("secretsmanager.%s.amazonaws.com", sm.Config.Region.String()))
 
 	return sm, nil
 
