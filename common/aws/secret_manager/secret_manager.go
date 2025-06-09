@@ -11,17 +11,23 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/getaxal/verified-signer/common/aws"
 )
 
 const (
 	algorithm       = "AWS4-HMAC-SHA256"
 	service         = "secretsmanager"
 	terminationChar = "aws4_request"
+	// EC2 metadata endpoints for IAM role credentials
+	ec2MetadataTokenURL = "http://169.254.169.254/latest/api/token"
+	ec2MetadataRoleURL  = "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
 )
 
 type SecretManager struct {
-	Client *http.Client
-	Config *SecretManagerConfig
+	Client      *http.Client
+	Config      *SecretManagerConfig
+	Environment string // "local", "dev", or "prod"
 }
 
 // GetSecretValueRequest represents the request payload
@@ -38,16 +44,128 @@ type GetSecretValueResponse struct {
 	VersionStages []string `json:"VersionStages"`
 }
 
-// Creates a new Secret Manager instance
-func NewSecretManager(cfg SecretManagerConfig) *SecretManager {
+// EC2Credentials represents temporary credentials from EC2 metadata
+type EC2Credentials struct {
+	AccessKeyId     string    `json:"AccessKeyId"`
+	SecretAccessKey string    `json:"SecretAccessKey"`
+	Token           string    `json:"Token"`
+	Expiration      time.Time `json:"Expiration"`
+}
+
+// Creates a new Secret Manager instance with specified environment
+// environment should be "dev", "prod", or "local"
+func NewSecretManager(cfg SecretManagerConfig, environment string) *SecretManager {
 	return &SecretManager{
-		Client: &http.Client{Timeout: 30 * time.Second},
-		Config: &cfg,
+		Client:      &http.Client{Timeout: 30 * time.Second},
+		Config:      &cfg,
+		Environment: environment,
+	}
+}
+
+// getEC2Credentials fetches temporary credentials from EC2 instance metadata
+func (sm *SecretManager) getEC2Credentials() (*aws.AWSCredentials, error) {
+	// Get IMDSv2 token for secure access
+	tokenReq, err := http.NewRequest("PUT", ec2MetadataTokenURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create token request: %w", err)
+	}
+	tokenReq.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "21600")
+
+	tokenResp, err := sm.Client.Do(tokenReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metadata token: %w", err)
+	}
+	defer tokenResp.Body.Close()
+
+	if tokenResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get metadata token, status: %d", tokenResp.StatusCode)
+	}
+
+	token, err := io.ReadAll(tokenResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read metadata token: %w", err)
+	}
+
+	// Get IAM role name
+	roleReq, err := http.NewRequest("GET", ec2MetadataRoleURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create role request: %w", err)
+	}
+	roleReq.Header.Set("X-aws-ec2-metadata-token", string(token))
+
+	roleResp, err := sm.Client.Do(roleReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get IAM role: %w", err)
+	}
+	defer roleResp.Body.Close()
+
+	if roleResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get IAM role, status: %d", roleResp.StatusCode)
+	}
+
+	roleName, err := io.ReadAll(roleResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read IAM role name: %w", err)
+	}
+
+	// Get temporary credentials for the role
+	credReq, err := http.NewRequest("GET", ec2MetadataRoleURL+string(roleName), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create credentials request: %w", err)
+	}
+	credReq.Header.Set("X-aws-ec2-metadata-token", string(token))
+
+	credResp, err := sm.Client.Do(credReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get credentials: %w", err)
+	}
+	defer credResp.Body.Close()
+
+	if credResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get credentials, status: %d", credResp.StatusCode)
+	}
+
+	var ec2Creds EC2Credentials
+	if err := json.NewDecoder(credResp.Body).Decode(&ec2Creds); err != nil {
+		return nil, fmt.Errorf("failed to decode credentials: %w", err)
+	}
+
+	return &aws.AWSCredentials{
+		AccessKey:    ec2Creds.AccessKeyId,
+		AccessSecret: ec2Creds.SecretAccessKey,
+		SessionToken: ec2Creds.Token,
+	}, nil
+}
+
+// getCredentials returns the appropriate credentials based on environment
+func (sm *SecretManager) getCredentials() (*aws.AWSCredentials, error) {
+	switch sm.Environment {
+	case "dev", "prod":
+		// Use IAM role credentials from EC2 metadata
+		return sm.getEC2Credentials()
+	case "local":
+		// Use environment variables or existing config
+		if sm.Config.Credentials.AccessKey != "" && sm.Config.Credentials.AccessSecret != "" && sm.Config.Credentials.Region.String() != "" {
+			return &sm.Config.Credentials, nil
+		}
+		return nil, fmt.Errorf("Unable to fetch local credentials")
+	default:
+		// Use environment variables or existing config
+		if sm.Config.Credentials.AccessKey != "" && sm.Config.Credentials.AccessSecret != "" && sm.Config.Credentials.Region.String() != "" {
+			return &sm.Config.Credentials, nil
+		}
+		return nil, fmt.Errorf("Unable to fetch local credentials")
 	}
 }
 
 // Use this function to sign the HTTP request to AWS. Uses AWS sig4 found here https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_sigv.html.
 func (sm *SecretManager) signRequest(req *http.Request, payload string) error {
+	// Get appropriate credentials based on environment
+	creds, err := sm.getCredentials()
+	if err != nil {
+		return fmt.Errorf("failed to get credentials: %w", err)
+	}
+
 	t := time.Now().UTC()
 	amzDate := t.Format("20060102T150405Z")
 	dateStamp := t.Format("20060102")
@@ -64,24 +182,26 @@ func (sm *SecretManager) signRequest(req *http.Request, payload string) error {
 	req.Header.Set("X-Amz-Target", "secretsmanager.GetSecretValue")
 	req.Header.Set("Content-Type", "application/x-amz-json-1.1")
 
+	// Add session token if present (for IAM role credentials)
+	if creds.SessionToken != "" {
+		req.Header.Set("X-Amz-Security-Token", creds.SessionToken)
+	}
+
 	// Create canonical request
 	canonicalURI := req.URL.Path
 	if canonicalURI == "" {
 		canonicalURI = "/"
 	}
-
 	canonicalQueryString := req.URL.RawQuery
 
 	// Create canonical headers - MUST include Host
 	var headerNames []string
 	headerMap := make(map[string]string)
-
 	for name, values := range req.Header {
 		lowerName := strings.ToLower(name)
 		headerNames = append(headerNames, lowerName)
 		headerMap[lowerName] = strings.TrimSpace(strings.Join(values, ","))
 	}
-
 	sort.Strings(headerNames)
 
 	var canonicalHeaders strings.Builder
@@ -101,13 +221,13 @@ func (sm *SecretManager) signRequest(req *http.Request, payload string) error {
 	stringToSign := fmt.Sprintf("%s\n%s\n%s\n%s",
 		algorithm, amzDate, credentialScope, sha256Hash(canonicalRequest))
 
-	// Create signature
-	signingKey := createSignatureKey(sm.Config.Credentials.AccessSecret, dateStamp, sm.Config.Region.String(), service)
+	// Create signature using the obtained credentials
+	signingKey := createSignatureKey(creds.AccessSecret, dateStamp, sm.Config.Region.String(), service)
 	signature := hex.EncodeToString(hmacSHA256(signingKey, stringToSign))
 
 	// Create authorization header
 	authorizationHeader := fmt.Sprintf("%s Credential=%s/%s, SignedHeaders=%s, Signature=%s",
-		algorithm, sm.Config.Credentials.AccessKey, credentialScope, signedHeaders, signature)
+		algorithm, creds.AccessKey, credentialScope, signedHeaders, signature)
 
 	req.Header.Set("Authorization", authorizationHeader)
 	return nil
@@ -120,7 +240,6 @@ func (sm *SecretManager) GetSecret(ctx context.Context, secretName string) (*Get
 	reqPayload := GetSecretValueRequest{
 		SecretId: secretName,
 	}
-
 	payloadBytes, err := json.Marshal(reqPayload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -133,7 +252,7 @@ func (sm *SecretManager) GetSecret(ctx context.Context, secretName string) (*Get
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Sign the request
+	// Sign the request (automatically uses appropriate credentials based on environment)
 	if err := sm.signRequest(req, string(payloadBytes)); err != nil {
 		return nil, fmt.Errorf("failed to sign request: %w", err)
 	}

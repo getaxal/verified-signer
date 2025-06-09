@@ -69,7 +69,6 @@ type EnvironmentConfig struct {
 	Environment string `yaml:"environment"`
 }
 
-
 // Loads Environment config from a config path
 func LoadEnvConfig(configPath string) (*EnvironmentConfig, error) {
 	log.Info("Loading environment config for the compute environment")
@@ -89,4 +88,12 @@ func LoadEnvConfig(configPath string) (*EnvironmentConfig, error) {
 	}
 
 	return &config.Environment, nil
+}
+
+func (cfg *EnvironmentConfig) GetEnv() string {
+	if cfg.Environment == "prod" || cfg.Environment == "dev" || cfg.Environment == "local" {
+		return cfg.Environment
+	} else {
+		return "local"
+	}
 }

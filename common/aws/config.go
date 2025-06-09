@@ -15,6 +15,7 @@ type AWSConfig struct {
 type AWSCredentials struct {
 	AccessKey    string    `yaml:"access_key" json:"access_key"`
 	AccessSecret string    `yaml:"access_secret" json:"access_secret"`
+	SessionToken string    `yaml:"session_token,omitempty"`
 	Region       AWSRegion `yaml:"region" json:"region"`
 }
 

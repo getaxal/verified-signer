@@ -29,9 +29,9 @@ type PrivyClient struct {
 }
 
 // Inits a new Privy Client with a custom Transport Layer service that routes https through the privyAPIVsockPort. It initates it to privysigner.PrivyCli.
-func InitNewPrivyClient(portsCfg *enclave.PortConfig, awsConfig *aws.AWSConfig, environment *EnvironmentConfig) error {
+func InitNewPrivyClient(portsCfg *enclave.PortConfig, awsConfig *aws.AWSConfig, environment *enclave.EnvironmentConfig) error {
 	// Setup Privy Config for privy api details
-	privyConfig, err := InitPrivyConfig(*awsConfig, portsCfg.AWSSecretManagerVsockPort, environment)
+	privyConfig, err := InitPrivyConfig(*awsConfig, portsCfg.AWSSecretManagerVsockPort, environment.GetEnv())
 
 	if err != nil {
 		log.Errorf("Could not fetch Privy config due to err: %v", err)

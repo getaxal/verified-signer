@@ -31,7 +31,7 @@ func InitPrivyConfig(awsConfig aws.AWSConfig, awsSecretsManagerPort uint32, envi
 
 	log.Infof("Loaded secret manager config")
 
-	sm := secretmanager.NewSecretManager(smCfg)
+	sm := secretmanager.NewSecretManager(smCfg, environment)
 
 	sm.Client = network.InitHttpsClientWithTLSVsockTransport(awsSecretsManagerPort, "secretsmanager.us-east-2.amazonaws.com")
 
@@ -42,7 +42,7 @@ func InitPrivyConfig(awsConfig aws.AWSConfig, awsSecretsManagerPort uint32, envi
 
 	if environment == "prod" {
 		secretResponse, err = sm.GetSecret(context.Background(), "prod/privy")
-	} else if environment == "dev" {
+	} else if environment == "dev" || environment == "local" {
 		secretResponse, err = sm.GetSecret(context.Background(), "dev/privy")
 	} else {
 		return nil, fmt.Errorf("invalid environment, no such env: %s", environment)
