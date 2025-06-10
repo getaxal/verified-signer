@@ -533,3 +533,228 @@ whitelist_config:
 	assert.Contains(t, config.Whitelist.Pools, "pool123.with-numbers456.com")
 	assert.Contains(t, config.Whitelist.Pools, "sub.domain.pool.example.com")
 }
+
+func TestLoadEnvConfig(t *testing.T) {
+	tests := []struct {
+		name         string
+		yamlContent  string
+		expectedEnv  string
+		expectError  bool
+		errorMessage string
+	}{
+		{
+			name: "valid prod config",
+			yamlContent: `environment:
+  environment: prod`,
+			expectedEnv: "prod",
+			expectError: false,
+		},
+		{
+			name: "valid dev config",
+			yamlContent: `environment:
+  environment: dev`,
+			expectedEnv: "dev",
+			expectError: false,
+		},
+		{
+			name: "valid local config",
+			yamlContent: `environment:
+  environment: local`,
+			expectedEnv: "local",
+			expectError: false,
+		},
+		{
+			name: "empty environment value",
+			yamlContent: `environment:
+  environment: ""`,
+			expectedEnv:  "",
+			expectError:  true,
+			errorMessage: "no env loaded from:",
+		},
+		{
+			name: "missing environment field",
+			yamlContent: `environment:
+  other_field: value`,
+			expectedEnv:  "",
+			expectError:  true,
+			errorMessage: "no env loaded from:",
+		},
+		{
+			name:         "completely empty config",
+			yamlContent:  ``,
+			expectedEnv:  "",
+			expectError:  true,
+			errorMessage: "no env loaded from:",
+		},
+		{
+			name: "invalid yaml",
+			yamlContent: `environment:
+  environment: prod
+invalid_yaml: [unclosed`,
+			expectedEnv:  "",
+			expectError:  true,
+			errorMessage: "failed to load config from",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary file
+			tmpFile, err := os.CreateTemp("", "config_*.yaml")
+			if err != nil {
+				t.Fatalf("Failed to create temp file: %v", err)
+			}
+			defer os.Remove(tmpFile.Name()) // Clean up
+
+			// Write test content to file
+			if _, err := tmpFile.WriteString(tt.yamlContent); err != nil {
+				t.Fatalf("Failed to write to temp file: %v", err)
+			}
+			tmpFile.Close()
+
+			// Test LoadEnvConfig
+			config, err := LoadEnvConfig(tmpFile.Name())
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+					return
+				}
+				if tt.errorMessage != "" && !contains(err.Error(), tt.errorMessage) {
+					t.Errorf("Expected error message to contain '%s', got: %s", tt.errorMessage, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if config == nil {
+				t.Error("Expected config to not be nil")
+				return
+			}
+
+			if config.Environment != tt.expectedEnv {
+				t.Errorf("Expected environment '%s', got '%s'", tt.expectedEnv, config.Environment)
+			}
+		})
+	}
+}
+
+func TestLoadEnvConfig_NonExistentFile(t *testing.T) {
+	nonExistentPath := filepath.Join(os.TempDir(), "non_existent_config.yaml")
+
+	config, err := LoadEnvConfig(nonExistentPath)
+
+	if err == nil {
+		t.Error("Expected error for non-existent file")
+	}
+
+	if config != nil {
+		t.Error("Expected config to be nil for non-existent file")
+	}
+
+	if !contains(err.Error(), "failed to load config from") {
+		t.Errorf("Expected error message to contain 'failed to load config from', got: %s", err.Error())
+	}
+}
+
+func TestEnvironmentConfig_GetEnv(t *testing.T) {
+	tests := []struct {
+		name        string
+		environment string
+		expected    string
+	}{
+		{
+			name:        "prod environment",
+			environment: "prod",
+			expected:    "prod",
+		},
+		{
+			name:        "dev environment",
+			environment: "dev",
+			expected:    "dev",
+		},
+		{
+			name:        "local environment",
+			environment: "local",
+			expected:    "local",
+		},
+		{
+			name:        "invalid environment defaults to local",
+			environment: "staging",
+			expected:    "local",
+		},
+		{
+			name:        "empty environment defaults to local",
+			environment: "",
+			expected:    "local",
+		},
+		{
+			name:        "random string defaults to local",
+			environment: "random123",
+			expected:    "local",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &EnvironmentConfig{
+				Environment: tt.environment,
+			}
+
+			result := config.GetEnv()
+
+			if result != tt.expected {
+				t.Errorf("Expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestLoadEnvConfig_Integration(t *testing.T) {
+	// Test the full flow: load config and then call GetEnv()
+	yamlContent := `environment:
+  environment: prod`
+
+	tmpFile, err := os.CreateTemp("", "integration_config_*.yaml")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(yamlContent); err != nil {
+		t.Fatalf("Failed to write to temp file: %v", err)
+	}
+	tmpFile.Close()
+
+	config, err := LoadEnvConfig(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Unexpected error loading config: %v", err)
+	}
+
+	env := config.GetEnv()
+	if env != "prod" {
+		t.Errorf("Expected 'prod', got '%s'", env)
+	}
+}
+
+// Helper function to check if a string contains a substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) &&
+		(s == substr ||
+			s[:len(substr)] == substr ||
+			s[len(s)-len(substr):] == substr ||
+			containsSubstring(s, substr))
+}
+
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

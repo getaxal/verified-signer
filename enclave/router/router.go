@@ -47,16 +47,16 @@ func initRoutes(r *gin.Engine) {
 
 			solGroup := signerGroup.Group("/sol")
 			{
-				solGroup.POST("/solSignTx/:userId", EthTransactionSignTxHandler)
-				solGroup.POST("/solSendTx/:userId", EthTransactionSendTxHandler)
-				solGroup.POST("/signMessage/:userId", EthPersonalSignTxHandler)
+				solGroup.POST("/solSignTx/:userId", SolSignTxHandler)
+				solGroup.POST("/solSendTx/:userId", SolSignAndSendTxHandler)
+				solGroup.POST("/signMessage/:userId", SolSignMessageTxHandler)
 			}
 		}
 
 		//APIs for getting TEE attestation
 		attestationGroup := v1.Group("/attest")
 		{
-			attestationGroup.GET("/bytes/:nonce", GetAttestationDocHandler)
+			attestationGroup.GET("/bytes/:nonce", GetAttestationBytesHandler)
 			attestationGroup.GET("/doc/:nonce", GetAttestationDocHandler)
 		}
 

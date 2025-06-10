@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/getaxal/verified-signer/enclave/network"
-
-	"github.com/getaxal/verified-signer/common/aws"
 	log "github.com/sirupsen/logrus"
 
 	secretmanager "github.com/getaxal/verified-signer/common/aws/secret_manager"
@@ -23,26 +20,21 @@ type PrivyConfig struct {
 
 // Init Privy config by fetching details from AWS SecretsManager using a Vsock HTTPS client. We need to provide a Vsock port for AWS communication for
 // this client.
-func InitPrivyConfig(awsConfig aws.AWSConfig, awsSecretsManagerPort uint32, environment string) (*PrivyConfig, error) {
-	smCfg := secretmanager.SecretManagerConfig{
-		Credentials: awsConfig.AWSCredentials,
-		Region:      aws.USEast2,
-	}
-
+func InitPrivyConfig(configPath string, awsSecretsManagerPort uint32, ec2Port uint32, environment string) (*PrivyConfig, error) {
 	log.Infof("Loaded secret manager config")
 
-	sm := secretmanager.NewSecretManager(smCfg)
-
-	sm.Client = network.InitHttpsClientWithTLSVsockTransport(awsSecretsManagerPort, "secretsmanager.us-east-2.amazonaws.com")
+	sm, err := secretmanager.NewSecretManager(configPath, environment, awsSecretsManagerPort, ec2Port)
+	if err != nil {
+		return nil, err
+	}
 
 	log.Info("Fetching Privy config from Secret Manager")
 
 	var secretResponse *secretmanager.GetSecretValueResponse
-	var err error
 
 	if environment == "prod" {
 		secretResponse, err = sm.GetSecret(context.Background(), "prod/privy")
-	} else if environment == "dev" {
+	} else if environment == "dev" || environment == "local" {
 		secretResponse, err = sm.GetSecret(context.Background(), "dev/privy")
 	} else {
 		return nil, fmt.Errorf("invalid environment, no such env: %s", environment)
