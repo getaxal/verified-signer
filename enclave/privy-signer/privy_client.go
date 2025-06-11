@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/getaxal/verified-signer/enclave"
 	"github.com/getaxal/verified-signer/enclave/privy-signer/data"
+	"github.com/jellydator/ttlcache/v3"
 
 	"github.com/getaxal/verified-signer/common/network"
 
@@ -25,6 +27,7 @@ type PrivyClient struct {
 	client        *http.Client
 	privyConfig   *PrivyConfig
 	authorization string
+	userCache     *ttlcache.Cache[string, data.PrivyUser]
 }
 
 // Inits a new Privy Client with a custom Transport Layer service that routes https through the privyAPIVsockPort. It initates it to privysigner.PrivyCli.
@@ -46,11 +49,17 @@ func InitNewPrivyClient(configPath string, portsCfg *enclave.PortConfig, environ
 
 	authorization := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 
+	userCache := ttlcache.New[string, data.PrivyUser](
+		ttlcache.WithTTL[string, data.PrivyUser](20 * time.Minute))
+
+	go userCache.Start()
+
 	PrivyCli = &PrivyClient{
 		baseUrl:       "https://api.privy.io",
 		client:        privyClient,
 		privyConfig:   privyConfig,
 		authorization: authorization,
+		userCache:     userCache,
 	}
 
 	return nil
@@ -197,6 +206,12 @@ func (cli *PrivyClient) executeSigningRequest(txRequest interface{}, walletId st
 
 // Gets a user given a Privy userID
 func (cli *PrivyClient) GetUser(userId string) (*data.PrivyUser, *data.HttpError) {
+	if cli.userCache.Has(userId) {
+		hit := cli.userCache.Get(userId).Value()
+		log.Infof("Cache hit: %+v", hit)
+		return &hit, nil
+	}
+
 	url := fmt.Sprintf("%s%s", cli.baseUrl, GET_USER_PATH.Build(userId))
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -253,6 +268,8 @@ func (cli *PrivyClient) GetUser(userId string) (*data.PrivyUser, *data.HttpError
 			},
 		}
 	}
+
+	cli.userCache.Set(userId, user, ttlcache.DefaultTTL)
 
 	return &user, nil
 }
