@@ -55,18 +55,24 @@ if [ -z "$SSH_AUTH_SOCK" ] || ! ssh-add -l >/dev/null 2>&1; then
     echo "   Starting SSH agent..." | tee -a "$BUILD_LOG"
     eval "$(ssh-agent -s)" | tee -a "$BUILD_LOG"
     
-    # Try to add the default SSH key
-    if [ -f ~/.ssh/id_rsa ]; then
-        echo "   Adding SSH key..." | tee -a "$BUILD_LOG"
+    # Try to add the specific SSH key
+    if [ -f ~/.ssh/ekam-git ]; then
+        echo "   Adding ekam-git SSH key..." | tee -a "$BUILD_LOG"
+        ssh-add ~/.ssh/ekam-git 2>&1 | tee -a "$BUILD_LOG"
+    elif [ -f ~/.ssh/id_rsa ]; then
+        echo "   Adding id_rsa SSH key..." | tee -a "$BUILD_LOG"
         ssh-add ~/.ssh/id_rsa 2>&1 | tee -a "$BUILD_LOG"
     elif [ -f ~/.ssh/id_ed25519 ]; then
-        echo "   Adding SSH key..." | tee -a "$BUILD_LOG"
+        echo "   Adding id_ed25519 SSH key..." | tee -a "$BUILD_LOG"
         ssh-add ~/.ssh/id_ed25519 2>&1 | tee -a "$BUILD_LOG"
     else
         echo -e "${YELLOW}⚠️  No SSH key found${NC}" | tee -a "$BUILD_LOG"
+        echo "   Available keys:" | tee -a "$BUILD_LOG"
+        ls -la ~/.ssh/ | grep -E "\.(pub|pem)$" | tee -a "$BUILD_LOG" || echo "   No keys found" | tee -a "$BUILD_LOG"
     fi
 else
     echo "   ✅ SSH agent already running" | tee -a "$BUILD_LOG"
+    echo "   Current keys:" | tee -a "$BUILD_LOG"
     ssh-add -l 2>&1 | tee -a "$BUILD_LOG"
 fi
 
@@ -77,7 +83,12 @@ echo "🔗 Step 3: Verifying GitHub access..." | tee -a "$BUILD_LOG"
 if ssh -T git@github.com 2>&1 | tee -a "$BUILD_LOG" | grep -q "successfully authenticated"; then
     echo "   ✅ GitHub SSH connection verified" | tee -a "$BUILD_LOG"
 else
-    echo -e "${YELLOW}⚠️  GitHub SSH may not be configured${NC}" | tee -a "$BUILD_LOG"
+    echo -e "${YELLOW}⚠️  GitHub SSH connection failed${NC}" | tee -a "$BUILD_LOG"
+    echo "   This may cause Docker build to fail if accessing private repositories" | tee -a "$BUILD_LOG"
+    echo "   💡 To fix:" | tee -a "$BUILD_LOG"
+    echo "      1. Ensure SSH key is added to GitHub" | tee -a "$BUILD_LOG"
+    echo "      2. Test manually: ssh -T git@github.com" | tee -a "$BUILD_LOG"
+    echo "      3. Check if passphrase is required for key" | tee -a "$BUILD_LOG"
 fi
 
 echo "" | tee -a "$BUILD_LOG"

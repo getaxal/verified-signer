@@ -44,18 +44,24 @@ if [ -z "$SSH_AUTH_SOCK" ] || ! ssh-add -l >/dev/null 2>&1; then
     echo "   Starting SSH agent..." | tee -a "$BUILD_LOG"
     eval "$(ssh-agent -s)" | tee -a "$BUILD_LOG"
     
-    # Try to add the default SSH key
-    if [ -f ~/.ssh/id_rsa ]; then
-        echo "   Adding SSH key..." | tee -a "$BUILD_LOG"
+    # Try to add the specific SSH key (ekam-git first, then fallbacks)
+    if [ -f ~/.ssh/ekam-git ]; then
+        echo "   Adding ekam-git SSH key..." | tee -a "$BUILD_LOG"
+        ssh-add ~/.ssh/ekam-git 2>&1 | tee -a "$BUILD_LOG"
+    elif [ -f ~/.ssh/id_rsa ]; then
+        echo "   Adding id_rsa SSH key..." | tee -a "$BUILD_LOG"
         ssh-add ~/.ssh/id_rsa 2>&1 | tee -a "$BUILD_LOG"
     elif [ -f ~/.ssh/id_ed25519 ]; then
-        echo "   Adding SSH key..." | tee -a "$BUILD_LOG"
+        echo "   Adding id_ed25519 SSH key..." | tee -a "$BUILD_LOG"
         ssh-add ~/.ssh/id_ed25519 2>&1 | tee -a "$BUILD_LOG"
     else
         echo -e "${YELLOW}⚠️  No SSH key found. Proceeding without SSH authentication...${NC}" | tee -a "$BUILD_LOG"
+        echo "   Available keys:" | tee -a "$BUILD_LOG"
+        ls -la ~/.ssh/ | grep -E "\.(pub|pem)$" | tee -a "$BUILD_LOG" || echo "   No keys found" | tee -a "$BUILD_LOG"
     fi
 else
     echo "   ✅ SSH agent is already running" | tee -a "$BUILD_LOG"
+    echo "   Current keys:" | tee -a "$BUILD_LOG"
     ssh-add -l 2>&1 | tee -a "$BUILD_LOG"
 fi
 
@@ -68,6 +74,10 @@ if ssh -T git@github.com 2>&1 | tee -a "$BUILD_LOG" | grep -q "successfully auth
 else
     echo -e "${YELLOW}⚠️  GitHub SSH connection failed or not configured${NC}" | tee -a "$BUILD_LOG"
     echo "   Build may fail if private repositories are required" | tee -a "$BUILD_LOG"
+    echo "   💡 To fix:" | tee -a "$BUILD_LOG"
+    echo "      1. Check if SSH key is added to GitHub: https://github.com/settings/keys" | tee -a "$BUILD_LOG"
+    echo "      2. Test manually: ssh -T git@github.com" | tee -a "$BUILD_LOG"
+    echo "      3. Ensure SSH key passphrase is entered if required" | tee -a "$BUILD_LOG"
 fi
 
 echo "" | tee -a "$BUILD_LOG"
