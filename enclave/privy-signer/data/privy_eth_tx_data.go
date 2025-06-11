@@ -177,7 +177,7 @@ func (req *EthPersonalSignRequest) ValidateTxRequest() error {
 		return fmt.Errorf("missing message field in the transaction, it is required")
 	}
 
-	if req.Params.Encoding != "utf-8" {
+	if req.Params.Encoding != "utf-8" && req.Params.Encoding != "hex" {
 		return fmt.Errorf("missing encoding field in the transaction, it is required")
 	}
 
