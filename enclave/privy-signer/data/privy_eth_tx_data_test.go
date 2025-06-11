@@ -19,7 +19,7 @@ func TestEthSignTransactionRequest_ValidateTxRequest_Success(t *testing.T) {
 		}{
 			Transaction: EthTransaction{
 				To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-				Value: enclave.ToInt64Ptr(1000000000000000000), // 1 ETH
+				Value: "0xde0b6b3a7640000", // 1 ETH in hex
 			},
 		},
 	}
@@ -108,7 +108,7 @@ func TestEthSendTransactionRequest_ValidateTxRequest_Success(t *testing.T) {
 		}{
 			Transaction: EthTransaction{
 				To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-				Value: enclave.ToInt64Ptr(1000000000000000000),
+				Value: "0xde0b6b3a7640000", // 1 ETH in hex
 			},
 		},
 	}
@@ -578,7 +578,7 @@ func TestEthPersonalSignRequest_ValidateTxRequest_TableDriven(t *testing.T) {
 func TestNewSignTransactionRequest(t *testing.T) {
 	tx := &EthTransaction{
 		To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		Value: enclave.ToInt64Ptr(1000000000000000000),
+		Value: "0xde0b6b3a7640000", // 1 ETH in hex
 	}
 
 	req := NewEthSignTransactionRequest(tx)
@@ -596,7 +596,7 @@ func TestNewSignTransactionRequest(t *testing.T) {
 func TestNewSendTransactionRequest(t *testing.T) {
 	tx := &EthTransaction{
 		To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		Value: enclave.ToInt64Ptr(1000000000000000000),
+		Value: "0xde0b6b3a7640000", // 1 ETH in hex
 	}
 	caip2 := "eip155:11155111"
 	chainType := "ethereum"
@@ -640,7 +640,7 @@ func TestEthSignTransactionRequest_GetMethod(t *testing.T) {
 func TestEthSignTransactionRequest_GetTransaction(t *testing.T) {
 	tx := EthTransaction{
 		To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		Value: enclave.ToInt64Ptr(1000000000000000000),
+		Value: "0xde0b6b3a7640000", // 1 ETH in hex
 	}
 	req := &EthSignTransactionRequest{
 		Params: struct {
@@ -662,7 +662,7 @@ func TestEthSendTransactionRequest_GetMethod(t *testing.T) {
 func TestEthSendTransactionRequest_GetTransaction(t *testing.T) {
 	tx := EthTransaction{
 		To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		Value: enclave.ToInt64Ptr(1000000000000000000),
+		Value: "0xde0b6b3a7640000", // 1 ETH in hex
 	}
 	req := &EthSendTransactionRequest{
 		Params: struct {
@@ -692,17 +692,17 @@ func TestEthPersonalSignRequest_GetTransaction(t *testing.T) {
 func TestValidation_WithComplexTransactionData(t *testing.T) {
 	// Test with all transaction fields populated
 	tx := &EthTransaction{
-		ChainID:              enclave.ToInt64Ptr(11155111),
+		ChainID:              "0xaa36a7", // 11155111 in hex
 		Data:                 "0x1234567890abcdef",
 		From:                 "0x742d35Cc6E7c8D2a3C8d65C5c8c5c8c5c8c5c8c5",
-		GasLimit:             enclave.ToInt64Ptr(50000),
-		GasPrice:             enclave.ToInt64Ptr(20000000000),
-		MaxFeePerGas:         enclave.ToInt64Ptr(1000308),
-		MaxPriorityFeePerGas: enclave.ToInt64Ptr(1000000),
-		Nonce:                enclave.ToInt64Ptr(0),
+		GasLimit:             "0xc350",      // 50000 in hex
+		GasPrice:             "0x4a817c800", // 20000000000 in hex
+		MaxFeePerGas:         "0xf4634",     // 1000308 in hex
+		MaxPriorityFeePerGas: "0xf4240",     // 1000000 in hex
+		Nonce:                "0x0",         // 0 in hex
 		To:                   "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		Type:                 enclave.ToInt64Ptr(2),
-		Value:                enclave.ToInt64Ptr(1000000000000000000),
+		Type:                 enclave.ToInt64Ptr(2), // 2 in hex
+		Value:                "0xde0b6b3a7640000",   // 1 ETH in hex
 	}
 
 	signReq := NewEthSignTransactionRequest(tx)
