@@ -88,6 +88,8 @@ func (cli *PrivyClient) prepSigningTxRequest(body interface{}, walletId string) 
 	// attach json body
 	jsonData, err := json.Marshal(body)
 
+	log.Infof("JSON Data:%v", string(jsonData))
+
 	if err != nil {
 		log.Errorf("Error marshalling tx request: %v", err)
 		return nil, err

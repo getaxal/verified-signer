@@ -4,7 +4,7 @@ import "fmt"
 
 // Common transaction structure used in both APIs
 type EthTransaction struct {
-	ChainID              string `json:"chain_id,omitempty"`
+	ChainID              int64 `json:"chain_id,omitempty"`
 	Data                 string `json:"data,omitempty"`
 	From                 string `json:"from,omitempty"`
 	GasLimit             string `json:"gas_limit,omitempty"`
@@ -13,7 +13,7 @@ type EthTransaction struct {
 	MaxPriorityFeePerGas string `json:"max_priority_fee_per_gas,omitempty"`
 	Nonce                string `json:"nonce,omitempty"`
 	To                   string `json:"to"`
-	Type                 *int64 `json:"type,omitempty"` // Available options: 0, 1, 2
+	Type                 int64 `json:"type,omitempty"` // Available options: 0, 1, 2
 	Value                string `json:"value,omitempty"`
 }
 

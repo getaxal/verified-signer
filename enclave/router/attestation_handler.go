@@ -44,7 +44,7 @@ func GetAttestationBytesHandler(c *gin.Context) {
 		Attestation: attString,
 	}
 
-	c.JSON(http.StatusBadRequest, resp)
+	c.JSON(http.StatusOK, resp)
 }
 
 // Handler for fetching the verified attestation doc
@@ -77,5 +77,5 @@ func GetAttestationDocHandler(c *gin.Context) {
 		AttestationDoc: *doc,
 	}
 
-	c.JSON(http.StatusBadRequest, resp)
+	c.JSON(http.StatusOK, resp)
 }

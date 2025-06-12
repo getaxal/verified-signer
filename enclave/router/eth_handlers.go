@@ -159,6 +159,8 @@ func EthTransactionSendTxHandler(c *gin.Context) {
 		return
 	}
 
+	log.Infof("Transaction: %+v", transactionSendReq)
+
 	err = transactionSendReq.ValidateTxRequest()
 	if err != nil {
 		log.Errorf("Eth transaction send API error tx data is invalid with err: %v", err)
