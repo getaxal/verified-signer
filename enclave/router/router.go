@@ -59,8 +59,8 @@ func initRoutes(r *gin.Engine) {
 
 			walletGroup := userGroup.Group("/wallet")
 			{
-				walletGroup.GET("/eth", GetDelegatedEthWalletHandler)
-				walletGroup.GET("/sol", GetDelegatedSolWalletHandler)
+				walletGroup.GET("/eth/:userId", GetDelegatedEthWalletHandler)
+				walletGroup.GET("/sol/:userId", GetDelegatedSolWalletHandler)
 			}
 		}
 
