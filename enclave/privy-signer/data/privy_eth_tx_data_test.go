@@ -3,7 +3,6 @@ package data
 import (
 	"testing"
 
-	"github.com/getaxal/verified-signer/enclave"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -692,7 +691,7 @@ func TestEthPersonalSignRequest_GetTransaction(t *testing.T) {
 func TestValidation_WithComplexTransactionData(t *testing.T) {
 	// Test with all transaction fields populated
 	tx := &EthTransaction{
-		ChainID:              "0xaa36a7", // 11155111 in hex
+		ChainID:              11155111, // 11155111 in hex
 		Data:                 "0x1234567890abcdef",
 		From:                 "0x742d35Cc6E7c8D2a3C8d65C5c8c5c8c5c8c5c8c5",
 		GasLimit:             "0xc350",      // 50000 in hex
@@ -701,8 +700,8 @@ func TestValidation_WithComplexTransactionData(t *testing.T) {
 		MaxPriorityFeePerGas: "0xf4240",     // 1000000 in hex
 		Nonce:                "0x0",         // 0 in hex
 		To:                   "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		Type:                 enclave.ToInt64Ptr(2), // 2 in hex
-		Value:                "0xde0b6b3a7640000",   // 1 ETH in hex
+		Type:                 2,                   // 2 in hex
+		Value:                "0xde0b6b3a7640000", // 1 ETH in hex
 	}
 
 	signReq := NewEthSignTransactionRequest(tx)
