@@ -37,7 +37,7 @@ func EthPersonalSignTxHandler(c *gin.Context) {
 
 	err = personalSignReq.ValidateTxRequest()
 	if err != nil {
-		log.Errorf("Eth transaction sign API error tx data is invalid with err: %v", err)
+		log.Errorf("Eth personal sign API error tx data is invalid with err: %v", err)
 		resp := privydata.Message{
 			Message: "tx data is invalid",
 		}
@@ -188,6 +188,68 @@ func EthTransactionSendTxHandler(c *gin.Context) {
 	resp, httpErr := privysigner.PrivyCli.EthSendTransaction(&transactionSendReq, ethWallet.WalletID)
 	if httpErr != nil {
 		log.Errorf("Eth transaction send API error user %s could not send tx with err: %v", privyUserId, err)
+		c.JSON(httpErr.Code, httpErr.Message)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// Handles the Ethereum secp256k1_sign method. It takes the users userId as a path param and a EthSecp256k1SignResponse as the json body.
+// It fetches the users delegated eth wallet from the privy backend.
+func EthSecp256k1SignTxHandler(c *gin.Context) {
+	privyUserId := c.Param("userId")
+
+	if privyUserId == "" {
+		log.Errorf("Eth secp256k1 API error: missing user id")
+		resp := privydata.Message{
+			Message: "privy user id query parameter is required",
+		}
+		c.JSON(http.StatusBadRequest, resp)
+		return
+	}
+
+	var secp256k1Sign privydata.EthSecp256k1SignRequest
+	err := c.ShouldBindJSON(&secp256k1Sign)
+
+	if err != nil {
+		log.Errorf("Eth secp256k1 sign API error tx data is invalid, sign req: %+v", secp256k1Sign)
+		resp := privydata.Message{
+			Message: "tx data is invalid",
+		}
+		c.JSON(http.StatusBadRequest, resp)
+		return
+	}
+
+	err = secp256k1Sign.ValidateTxRequest()
+	if err != nil {
+		log.Errorf("Eth secp256k1 sign API error tx data is invalid with err: %v", err)
+		resp := privydata.Message{
+			Message: "tx data is invalid",
+		}
+		c.JSON(http.StatusBadRequest, resp)
+		return
+	}
+
+	user, httpErr := privysigner.PrivyCli.GetUser(privyUserId)
+	if httpErr != nil {
+		c.JSON(httpErr.Code, httpErr.Message)
+		return
+	}
+
+	ethWallet := user.GetUsersEthDelegatedWallet()
+	if ethWallet == nil || ethWallet.WalletID == "" {
+		log.Errorf("Eth secp256k1 sign API error user %s does not have a delegated eth wallet", privyUserId)
+		resp := privydata.Message{
+			Message: "user does not have an delegated eth wallet",
+		}
+		c.JSON(http.StatusBadRequest, resp)
+		return
+	}
+
+	resp, httpErr := privysigner.PrivyCli.EthSecp256k1Sign(&secp256k1Sign, ethWallet.WalletID)
+	if httpErr != nil {
+		log.Errorf("Eth secp256k1 sign API error user %s could not sign tx with err: %v", privyUserId, httpErr.Message.Message)
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
 	}
