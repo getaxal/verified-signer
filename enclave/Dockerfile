@@ -17,8 +17,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 
 # Download dependencies with SSH mount
-RUN --mount=type=ssh,id=default \
-    go mod download
+RUN go mod download
 
 # Copy source code
 COPY . .
