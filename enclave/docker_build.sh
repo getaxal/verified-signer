@@ -38,50 +38,6 @@ echo "🔧 Starting Docker build process..."
 echo "   📝 Build logs: $BUILD_LOG"
 echo "" | tee -a "$BUILD_LOG"
 
-# Check if SSH agent is running
-echo "🔑 Checking SSH agent..." | tee -a "$BUILD_LOG"
-if [ -z "$SSH_AUTH_SOCK" ] || ! ssh-add -l >/dev/null 2>&1; then
-    echo "   Starting SSH agent..." | tee -a "$BUILD_LOG"
-    eval "$(ssh-agent -s)" | tee -a "$BUILD_LOG"
-    
-    # Try to add the specific SSH key (ekam-git first, then fallbacks)
-    if [ -f ~/.ssh/ekam-git ]; then
-        echo "   Adding ekam-git SSH key..." | tee -a "$BUILD_LOG"
-        ssh-add ~/.ssh/ekam-git 2>&1 | tee -a "$BUILD_LOG"
-    elif [ -f ~/.ssh/id_rsa ]; then
-        echo "   Adding id_rsa SSH key..." | tee -a "$BUILD_LOG"
-        ssh-add ~/.ssh/id_rsa 2>&1 | tee -a "$BUILD_LOG"
-    elif [ -f ~/.ssh/id_ed25519 ]; then
-        echo "   Adding id_ed25519 SSH key..." | tee -a "$BUILD_LOG"
-        ssh-add ~/.ssh/id_ed25519 2>&1 | tee -a "$BUILD_LOG"
-    else
-        echo -e "${YELLOW}⚠️  No SSH key found. Proceeding without SSH authentication...${NC}" | tee -a "$BUILD_LOG"
-        echo "   Available keys:" | tee -a "$BUILD_LOG"
-        ls -la ~/.ssh/ | grep -E "\.(pub|pem)$" | tee -a "$BUILD_LOG" || echo "   No keys found" | tee -a "$BUILD_LOG"
-    fi
-else
-    echo "   ✅ SSH agent is already running" | tee -a "$BUILD_LOG"
-    echo "   Current keys:" | tee -a "$BUILD_LOG"
-    ssh-add -l 2>&1 | tee -a "$BUILD_LOG"
-fi
-
-echo "" | tee -a "$BUILD_LOG"
-
-# Test SSH connection to GitHub
-echo "🔗 Testing GitHub SSH connection..." | tee -a "$BUILD_LOG"
-if ssh -T git@github.com 2>&1 | tee -a "$BUILD_LOG" | grep -q "successfully authenticated"; then
-    echo "   ✅ GitHub SSH connection successful" | tee -a "$BUILD_LOG"
-else
-    echo -e "${YELLOW}⚠️  GitHub SSH connection failed or not configured${NC}" | tee -a "$BUILD_LOG"
-    echo "   Build may fail if private repositories are required" | tee -a "$BUILD_LOG"
-    echo "   💡 To fix:" | tee -a "$BUILD_LOG"
-    echo "      1. Check if SSH key is added to GitHub: https://github.com/settings/keys" | tee -a "$BUILD_LOG"
-    echo "      2. Test manually: ssh -T git@github.com" | tee -a "$BUILD_LOG"
-    echo "      3. Ensure SSH key passphrase is entered if required" | tee -a "$BUILD_LOG"
-fi
-
-echo "" | tee -a "$BUILD_LOG"
-
 # Build Docker image
 echo "🔨 Building Docker image: $DOCKER_IMAGE_NAME:$DOCKER_TAG" | tee -a "$BUILD_LOG"
 echo "   This may take several minutes..." | tee -a "$BUILD_LOG"
@@ -90,7 +46,7 @@ echo "" | tee -a "$BUILD_LOG"
 # Enable Docker BuildKit and build with SSH
 export DOCKER_BUILDKIT=1
 
-if docker build --ssh default -t "$DOCKER_IMAGE_NAME:$DOCKER_TAG" . 2>&1 | tee -a "$BUILD_LOG"; then
+if docker build -t "$DOCKER_IMAGE_NAME:$DOCKER_TAG" . 2>&1 | tee -a "$BUILD_LOG"; then
     echo "" | tee -a "$BUILD_LOG"
     echo -e "${GREEN}✅ Docker image built successfully!${NC}" | tee -a "$BUILD_LOG"
     echo "   📦 Image: $DOCKER_IMAGE_NAME:$DOCKER_TAG" | tee -a "$BUILD_LOG"
