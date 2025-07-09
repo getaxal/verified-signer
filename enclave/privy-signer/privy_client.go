@@ -72,7 +72,7 @@ func getSimplePrivyErrorMessage(responseBody []byte) string {
 		Error string `json:"error"`
 	}
 
-	log.Infof(string(responseBody))
+	log.Infof("err: %s", string(responseBody))
 
 	err := json.Unmarshal(responseBody, &errorResp)
 	if err != nil {
