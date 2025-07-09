@@ -54,6 +54,11 @@ func initRoutes(r *gin.Engine) {
 			}
 		}
 
+		userGroup := v1.Group("/user")
+		{
+			userGroup.GET("/:userId", GetUserHandler)
+		}
+
 		//APIs for getting TEE attestation
 		attestationGroup := v1.Group("/attest")
 		{

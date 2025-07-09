@@ -12,10 +12,11 @@ import (
 
 // Config for privy access
 type PrivyConfig struct {
-	AppID               string `json:"app_id" yaml:"app_id"`
-	DelegatedActionsKey string `json:"delegated_actions_key" yaml:"delegated_actions_key"`
-	AppSecret           string `json:"app_secret" yaml:"app_secret"`
-	JWTVerificationKey  string `json:"jwt_verification_key" yaml:"jwt_verification_key"`
+	AppID                 string `json:"app_id" yaml:"app_id"`
+	DelegatedActionsKey   string `json:"delegated_actions_key" yaml:"delegated_actions_key"`
+	AppSecret             string `json:"app_secret" yaml:"app_secret"`
+	JWTVerificationKey    string `json:"jwt_verification_key" yaml:"jwt_verification_key"`
+	DelegatedActionsKeyId string `json:"key_id" yaml:"key_id"`
 }
 
 // Init Privy config by fetching details from AWS SecretsManager using a Vsock HTTPS client. We need to provide a Vsock port for AWS communication for
