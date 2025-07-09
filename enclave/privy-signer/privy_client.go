@@ -1,19 +1,17 @@
 package privysigner
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/getaxal/verified-signer/enclave"
 	"github.com/getaxal/verified-signer/enclave/privy-signer/data"
+	"github.com/jellydator/ttlcache/v3"
 
 	"github.com/getaxal/verified-signer/common/network"
-
-	authorizationsignature "github.com/getaxal/verified-signer/enclave/privy-signer/authorization_signature"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -25,6 +23,7 @@ type PrivyClient struct {
 	client        *http.Client
 	privyConfig   *PrivyConfig
 	authorization string
+	userCache     *ttlcache.Cache[string, data.PrivyUser]
 }
 
 // Inits a new Privy Client with a custom Transport Layer service that routes https through the privyAPIVsockPort. It initates it to privysigner.PrivyCli.
@@ -45,12 +44,16 @@ func InitNewPrivyClient(configPath string, portsCfg *enclave.PortConfig, environ
 	password := privyConfig.AppSecret
 
 	authorization := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	cache := ttlcache.New(
+		ttlcache.WithTTL[string, data.PrivyUser](30 * time.Minute),
+	)
 
 	PrivyCli = &PrivyClient{
 		baseUrl:       "https://api.privy.io",
 		client:        privyClient,
 		privyConfig:   privyConfig,
 		authorization: authorization,
+		userCache:     cache,
 	}
 
 	return nil
@@ -61,49 +64,6 @@ func (cli *PrivyClient) addStandardPrivyHeaders(req *http.Request) {
 	req.Header.Add("privy-app-id", cli.privyConfig.AppID)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Basic "+cli.authorization)
-}
-
-// Preps Transaction signing request by preparing the body and the headers.
-// The headers are:
-//
-//	{
-//	    "privy-app_id" : "your-app-id"
-//	    "authorization" : "privy-app-id:privy-app-secret" //base64 encoded
-//		"Content-Type" : "application/json"
-//		"privy-authorization-signature" : "your-auth-signature" //get it using authorizationsignature.GetAuthorizationSignature
-//	}
-func (cli *PrivyClient) prepSigningTxRequest(body interface{}, walletId string) (*http.Request, error) {
-	// format url
-	url := fmt.Sprintf("%s%s", cli.baseUrl, SIGN_TX_PATH.Build(walletId))
-
-	// attach json body
-	jsonData, err := json.Marshal(body)
-
-	if err != nil {
-		log.Errorf("Error marshalling tx request: %v", err)
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-
-	if err != nil {
-		log.Errorf("Error creating request: %v", err)
-		return nil, err
-	}
-
-	// Add basic headers
-	cli.addStandardPrivyHeaders(req)
-
-	// Add auth signature header
-	signature, err := authorizationsignature.GetAuthorizationSignature(body, req.Method, cli.privyConfig.DelegatedActionsKey, url, cli.privyConfig.AppID)
-	if err != nil {
-		log.Errorf("Error getting authorization signature: %v", err)
-		return nil, err
-	}
-
-	req.Header.Add("privy-authorization-signature", signature)
-
-	return req, nil
 }
 
 // Simple function to get just the error message from the privy error message
@@ -154,105 +114,4 @@ func (cli *PrivyClient) createInternalServerError() *data.HttpError {
 			Message: "Internal Server Error",
 		},
 	}
-}
-
-// Generic function to handle HTTP requests and responses for signing requests
-func (cli *PrivyClient) executeSigningRequest(txRequest interface{}, walletId string, response interface{}) *data.HttpError {
-	req, err := cli.prepSigningTxRequest(txRequest, walletId)
-	if err != nil {
-		log.Errorf("Error initiating signing request: %v", err)
-		return cli.createInternalServerError()
-	}
-
-	res, err := cli.client.Do(req)
-	if err != nil {
-		log.Errorf("Error making request: %v", err)
-		return cli.createInternalServerError()
-	}
-	defer res.Body.Close()
-
-	// Check status code
-	if res.StatusCode != http.StatusOK {
-		log.Errorf("Received status code %d", res.StatusCode)
-		httpErr := handlePrivyError(res)
-		return httpErr
-	}
-
-	// Read response body
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		log.Errorf("Error reading response body: %v", err)
-		return cli.createInternalServerError()
-	}
-
-	// Unmarshal response
-	err = json.Unmarshal(body, response)
-	if err != nil {
-		log.Errorf("Error unmarshalling response body: %v", err)
-		return cli.createInternalServerError()
-	}
-
-	return nil
-}
-
-// Gets a user given a Privy userID
-func (cli *PrivyClient) GetUser(userId string) (*data.PrivyUser, *data.HttpError) {
-	url := fmt.Sprintf("%s%s", cli.baseUrl, GET_USER_PATH.Build(userId))
-
-	req, err := http.NewRequest("GET", url, nil)
-
-	if err != nil {
-		log.Errorf("Error creating request: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	cli.addStandardPrivyHeaders(req)
-
-	res, err := cli.client.Do(req)
-	if err != nil {
-		log.Errorf("Error making request: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	defer res.Body.Close()
-
-	// Check status code
-	if res.StatusCode != http.StatusOK {
-		httpErr := handlePrivyError(res)
-		return nil, httpErr
-	}
-
-	// Read response body
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		log.Errorf("Error reading response body: %v", err)
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	var user data.PrivyUser
-	if err := json.Unmarshal(body, &user); err != nil {
-		return nil, &data.HttpError{
-			Code: 500,
-			Message: data.Message{
-				Message: "Internal Server Error",
-			},
-		}
-	}
-
-	return &user, nil
 }
