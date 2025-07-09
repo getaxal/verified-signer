@@ -6,13 +6,6 @@ FROM golang:1.24-alpine AS builder
 # Install necessary packages
 RUN apk add --no-cache git openssh-client
 
-# Configure SSH for GitHub
-RUN mkdir -p -m 0700 /root/.ssh && \
-    ssh-keyscan github.com >> /root/.ssh/known_hosts
-
-# Configure Git to use SSH instead of HTTPS
-RUN git config --global url."git@github.com:".insteadOf "https://github.com/"
-
 # Set up Go private module
 ENV GOPRIVATE=github.com/getaxal/*
 ENV GOPROXY=direct
