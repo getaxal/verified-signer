@@ -30,6 +30,11 @@ func (v *Verifier) VerifyEthTxRequest(req data.EthTxRequest) bool {
 	switch req.GetMethod() {
 	case "eth_signTransaction":
 		tx := req.GetTransaction()
+
+		if tx == nil {
+			return false
+		}
+
 		if !v.verifiedAddresses.IsWhitelisted(tx.To) {
 			return false
 		}
@@ -37,6 +42,11 @@ func (v *Verifier) VerifyEthTxRequest(req data.EthTxRequest) bool {
 
 	case "eth_sendTransaction":
 		tx := req.GetTransaction()
+
+		if tx == nil {
+			return false
+		}
+
 		if !v.verifiedAddresses.IsWhitelisted(tx.To) {
 			return false
 		}
