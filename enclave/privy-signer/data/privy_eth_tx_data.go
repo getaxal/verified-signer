@@ -272,6 +272,6 @@ type EthSecp256k1SignResponseData struct {
 
 // EthSecp256k1SignResponse represents the complete response from the secp256k1_sign request
 type EthSecp256k1SignResponse struct {
-	Method string                      `json:"method"`
-	Data   EthPersonalSignResponseData `json:"data"`
+	Method string                       `json:"method"`
+	Data   EthSecp256k1SignResponseData `json:"data"`
 }
