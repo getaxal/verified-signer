@@ -101,7 +101,7 @@ func (cli *PrivyClient) createUserWalletsIfNotExists(user data.PrivyUser, userId
 
 	walletCreateReq := data.NewCreateEthWalletRequest(cli.privyConfig.DelegatedActionsKeyId)
 
-	requestBody, err := json.Marshal(walletCreateReq.PrivyWalletCreateRequestWallets)
+	requestBody, err := json.Marshal(walletCreateReq)
 
 	if err != nil {
 		log.Errorf("failed to marshal wallet create request: %v", err)
