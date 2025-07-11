@@ -15,12 +15,13 @@ import (
 func Attest(nonce, userData, publicKey []byte) ([]byte, error) {
 	log.Info("Starting attestation process")
 	sess, err := nsm.OpenDefaultSession()
-	defer sess.Close()
 
-	if nil != err {
+	if err != nil {
 		log.Errorf("Unable to open NSM session with error: %v", err)
 		return nil, err
 	}
+
+	defer sess.Close()
 
 	log.Info("Sending attestation request")
 	res, err := sess.Send(&request.Attestation{
