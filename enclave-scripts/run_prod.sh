@@ -52,7 +52,7 @@ echo "   ✅ Cleanup completed"
 echo ""
 echo "🐳 Step 2: Fresh Docker build..."
 echo "   Building Docker image from scratch..."
-if ! ./docker_build_prod.sh; then
+if ! ./enclave-scripts/docker_build_prod.sh; then
     echo -e "${RED}❌ Production Docker build failed${NC}"
     exit 1
 fi
