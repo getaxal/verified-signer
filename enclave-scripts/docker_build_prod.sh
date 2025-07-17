@@ -6,7 +6,7 @@
 # Variables
 DOCKER_IMAGE_NAME="verified-signer"
 DOCKER_TAG="latest"
-LOG_DIR="./log"
+LOG_DIR="./enclave-logs"
 BUILD_LOG="$LOG_DIR/build.log"
 
 # Colors for output

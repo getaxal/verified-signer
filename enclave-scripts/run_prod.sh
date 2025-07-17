@@ -11,7 +11,7 @@ ENCLAVE_CID="5"
 CPU_COUNT="2"  # Allocator supports 2 CPUs
 MEMORY="512"   # Allocator supports 512MB
 
-LOG_DIR="./log"
+LOG_DIR="./enclave-logs"
 BUILD_LOG="$LOG_DIR/build.log"
 ENCLAVE_LOG="$LOG_DIR/enclave.log"
 
