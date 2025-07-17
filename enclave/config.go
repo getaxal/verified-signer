@@ -92,7 +92,7 @@ func LoadEnvConfig(configPath string) (*EnvironmentConfig, error) {
 }
 
 func (cfg *EnvironmentConfig) GetEnv() string {
-	if cfg.Environment == "prod" || cfg.Environment == "dev" || cfg.Environment == "local" {
+	if cfg.Environment == "prod" || cfg.Environment == "dev" || cfg.Environment == "local" || cfg.Environment == "staging" {
 		return cfg.Environment
 	} else {
 		return "local"

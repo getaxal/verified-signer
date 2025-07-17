@@ -37,7 +37,9 @@ func InitPrivyConfig(configPath string, awsSecretsManagerPort uint32, ec2Port ui
 		secretResponse, err = sm.GetSecret(context.Background(), "prod/privy")
 	} else if environment == "dev" || environment == "local" {
 		secretResponse, err = sm.GetSecret(context.Background(), "dev/privy")
-	} else {
+	} else if environment == "staging" {
+		secretResponse, err = sm.GetSecret(context.Background(), "staging/privy")
+	}else {
 		return nil, fmt.Errorf("invalid environment, no such env: %s", environment)
 	}
 

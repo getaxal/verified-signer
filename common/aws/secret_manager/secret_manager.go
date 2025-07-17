@@ -165,7 +165,7 @@ func (sm *SecretManager) getEC2Credentials() (*aws.AWSCredentials, error) {
 // getCredentials returns the appropriate credentials based on environment
 func (sm *SecretManager) getCredentials(cfgPath string) (*aws.AWSCredentials, error) {
 	switch sm.Environment {
-	case "dev", "prod":
+	case "dev", "prod", "staging":
 		// Use IAM role credentials from EC2 metadata
 		log.Info("Fetching ec2 credentials")
 		return sm.getEC2Credentials()
