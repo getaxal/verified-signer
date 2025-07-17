@@ -7,22 +7,29 @@ FROM golang:1.24-alpine AS builder
 RUN apk add --no-cache git openssh-client
 
 # Set up Go private module
-ENV GOPRIVATE=github.com/getaxal/*
 ENV GOPROXY=direct
 ENV GOSUMDB=off
 
 WORKDIR /app
 
-# Copy go mod files first for better caching
-COPY go.mod go.sum ./
+# Copy go mod files from both common and enclave
+COPY common/go.mod common/go.sum ./common/
+COPY enclave/go.mod enclave/go.sum ./enclave/
 
-# Download dependencies with SSH mount
+# Download dependencies for both modules
+WORKDIR /app/common
 RUN go mod download
 
-# Copy source code
-COPY . .
+WORKDIR /app/enclave
+RUN go mod download
+
+# Copy the source code
+WORKDIR /app
+COPY common/ ./common/
+COPY enclave/ ./enclave/
 
 # Build the application
+WORKDIR /app/enclave
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -a -installsuffix cgo -o main ./cmd
 
 # Stage 2: Runtime image
@@ -34,11 +41,13 @@ WORKDIR /root/
 RUN apk add --no-cache ca-certificates
 
 # Copy the binary from builder stage
-COPY --from=builder /app/main .
-RUN chmod +x ./main
+COPY --from=builder /app/enclave/main .
 
-# Copy config file
-COPY config.yaml /root/config.yaml
+# Copy config file if it exists
+COPY --from=builder /app/enclave/config.yaml . 
+
+# Make binary executable
+RUN chmod +x ./main
 
 # Run the application
 CMD ["/root/main", "-config", "/root/config.yaml"]

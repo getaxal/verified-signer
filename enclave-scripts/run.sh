@@ -11,7 +11,7 @@ ENCLAVE_CID="5"
 CPU_COUNT="2"
 MEMORY="512"
 
-LOG_DIR="./log"
+LOG_DIR="./enclave-logs"
 BUILD_LOG="$LOG_DIR/build.log"
 CONSOLE_LOG="$LOG_DIR/console.log"
 CONSOLE_PID_FILE="$LOG_DIR/console.pid"

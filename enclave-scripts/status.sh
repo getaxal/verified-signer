@@ -4,7 +4,7 @@
 # Usage: ./status.sh
 
 # Variables
-LOG_DIR="./log"
+LOG_DIR="./enclave-logs"
 CONSOLE_LOG="$LOG_DIR/console.log"
 BUILD_LOG="$LOG_DIR/build.log"
 CONSOLE_PID_FILE="$LOG_DIR/console.pid"

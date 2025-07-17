@@ -4,7 +4,7 @@
 # Usage: ./stop.sh
 
 # Variables
-LOG_DIR="./log"
+LOG_DIR="./enclave-logs"
 CONSOLE_LOG="$LOG_DIR/console.log"
 CONSOLE_PID_FILE="$LOG_DIR/console.pid"
 
