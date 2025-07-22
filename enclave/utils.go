@@ -5,11 +5,6 @@ import (
 	"reflect"
 )
 
-func ToInt64Ptr(i int) *int64 {
-	i64 := int64(i)
-	return &i64
-}
-
 // Function that checks if a value is a pointer and dereferences it if it is.
 func DereferenceIfPointer(v interface{}) interface{} {
 	rv := reflect.ValueOf(v)
