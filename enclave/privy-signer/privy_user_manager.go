@@ -15,7 +15,7 @@ import (
 
 // Gets a user given a Privy userID. It also checks to see if the user already has a delagted eth wallet, if it does not it will create one for them.
 func (cli *PrivyClient) GetUser(privyToken string) (*data.PrivyUser, *data.HttpError) {
-	privyId, err := jwt.ValidateJWTAndExtractUserID(privyToken, cli.privyConfig.JWTVerificationKey, cli.privyConfig.AppID)
+	privyId, err := jwt.ValidateJWTAndExtractUserID(privyToken, cli.privyConfig.JWTVerificationKey, cli.privyConfig.AppID, cli.Environment)
 	if err != nil {
 		log.Errorf("Unable to parse privy token: %v", err)
 		return nil, &data.HttpError{

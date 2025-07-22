@@ -37,15 +37,19 @@ func (c *PrivyClaims) Valid() error {
 }
 
 // validatePrivyClaims validates Privy-specific claims
-func validatePrivyClaims(claims *PrivyClaims, appID string) error {
+func validatePrivyClaims(claims *PrivyClaims, appID, env string) error {
 	if claims.AppId != appID {
 		return errors.New("aud claim must be your Privy App ID")
 	}
 	if claims.Issuer != "privy.io" {
 		return errors.New("iss claim must be 'privy.io'")
 	}
-	if claims.Expiration < time.Now().Unix() {
-		return errors.New("token is expired")
+
+	// We added this so in dev and local we can use dummy tokens
+	if env == "prod" || env == "staging" {
+		if claims.Expiration < time.Now().Unix() {
+			return errors.New("token is expired")
+		}
 	}
 	if claims.UserId == "" {
 		return errors.New("token does not contain user subject")
@@ -57,7 +61,7 @@ func validatePrivyClaims(claims *PrivyClaims, appID string) error {
 }
 
 // validateJWTAndExtractUserID validates a Privy JWT token using ES256 and extracts the user ID
-func ValidateJWTAndExtractUserID(tokenString, verificationKey, appID string) (string, error) {
+func ValidateJWTAndExtractUserID(tokenString, verificationKey, appID, env string) (string, error) {
 	if tokenString == "" {
 		return "", fmt.Errorf("token cannot be empty")
 	}
@@ -160,7 +164,7 @@ func ValidateJWTAndExtractUserID(tokenString, verificationKey, appID string) (st
 	}
 
 	// Validate Privy-specific claims
-	if err := validatePrivyClaims(privyClaim, appID); err != nil {
+	if err := validatePrivyClaims(privyClaim, appID, env); err != nil {
 		return "", fmt.Errorf("JWT claims are invalid: %w", err)
 	}
 

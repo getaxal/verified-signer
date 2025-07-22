@@ -62,7 +62,7 @@ func TestValidateJWTAndExtractUserID_ValidToken(t *testing.T) {
 	token, err := createTestJWT(claims)
 	require.NoError(t, err)
 
-	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, appID)
+	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, appID, "local")
 	assert.NoError(t, err)
 	assert.Equal(t, userDID, userID)
 }
@@ -88,7 +88,7 @@ func TestValidateJWTAndExtractUserID_InvalidSignature(t *testing.T) {
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEwrongkey123456789wrongkey123456789wrongkey123456789wrongkey123456789wrongkey==
 -----END PUBLIC KEY-----`
 
-	userID, err := ValidateJWTAndExtractUserID(token, wrongPublicKey, appID)
+	userID, err := ValidateJWTAndExtractUserID(token, wrongPublicKey, appID, "local")
 	assert.Error(t, err)
 	assert.Empty(t, userID)
 	assert.Contains(t, err.Error(), "JWT signature is invalid")
@@ -109,10 +109,30 @@ func TestValidateJWTAndExtractUserID_ExpiredToken(t *testing.T) {
 	token, err := createTestJWT(claims)
 	require.NoError(t, err)
 
-	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, appID)
+	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, appID, "prod")
 	assert.Error(t, err)
 	assert.Empty(t, userID)
 	assert.Contains(t, err.Error(), "token is expired")
+}
+
+func TestValidateJWTAndExtractUserID_ExpiredTokenButLocal(t *testing.T) {
+	appID := "test-app-id"
+	userDID := "did:privy:test123456789"
+
+	claims := &PrivyClaims{
+		UserId:     userDID,
+		Issuer:     "privy.io",
+		AppId:      appID,
+		Expiration: time.Now().Add(-1 * time.Hour).Unix(), // Expired 1 hour ago
+		IssuedAt:   time.Now().Add(-2 * time.Hour).Unix(),
+	}
+
+	token, err := createTestJWT(claims)
+	require.NoError(t, err)
+
+	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, appID, "local")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, userID)
 }
 
 func TestValidateJWTAndExtractUserID_InvalidDIDFormat(t *testing.T) {
@@ -129,7 +149,7 @@ func TestValidateJWTAndExtractUserID_InvalidDIDFormat(t *testing.T) {
 	token, err := createTestJWT(claims)
 	require.NoError(t, err)
 
-	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, appID)
+	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, appID, "local")
 	assert.Error(t, err)
 	assert.Empty(t, userID)
 	assert.Contains(t, err.Error(), "invalid user DID format")
@@ -151,7 +171,7 @@ func TestValidateJWTAndExtractUserID_WrongAppID(t *testing.T) {
 	token, err := createTestJWT(claims)
 	require.NoError(t, err)
 
-	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, wrongAppID)
+	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, wrongAppID, "local")
 	assert.Error(t, err)
 	assert.Empty(t, userID)
 	assert.Contains(t, err.Error(), "aud claim must be your Privy App ID")
@@ -172,7 +192,7 @@ func TestValidateJWTAndExtractUserID_WrongIssuer(t *testing.T) {
 	token, err := createTestJWT(claims)
 	require.NoError(t, err)
 
-	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, appID)
+	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, appID, "local")
 	assert.Error(t, err)
 	assert.Empty(t, userID)
 	assert.Contains(t, err.Error(), "iss claim must be 'privy.io'")
@@ -181,7 +201,7 @@ func TestValidateJWTAndExtractUserID_WrongIssuer(t *testing.T) {
 func TestValidateJWTAndExtractUserID_EmptyToken(t *testing.T) {
 	appID := "test-app-id"
 
-	userID, err := ValidateJWTAndExtractUserID("", testPublicKeyPEM, appID)
+	userID, err := ValidateJWTAndExtractUserID("", testPublicKeyPEM, appID, "local")
 	assert.Error(t, err)
 	assert.Empty(t, userID)
 	assert.Contains(t, err.Error(), "token cannot be empty")
@@ -191,7 +211,7 @@ func TestValidateJWTAndExtractUserID_EmptyVerificationKey(t *testing.T) {
 	appID := "test-app-id"
 	token := "some.jwt.token"
 
-	userID, err := ValidateJWTAndExtractUserID(token, "", appID)
+	userID, err := ValidateJWTAndExtractUserID(token, "", appID, "local")
 	assert.Error(t, err)
 	assert.Empty(t, userID)
 	assert.Contains(t, err.Error(), "verification key is not configured")
@@ -200,7 +220,7 @@ func TestValidateJWTAndExtractUserID_EmptyVerificationKey(t *testing.T) {
 func TestValidateJWTAndExtractUserID_EmptyAppID(t *testing.T) {
 	token := "some.jwt.token"
 
-	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, "")
+	userID, err := ValidateJWTAndExtractUserID(token, testPublicKeyPEM, "", "local")
 	assert.Error(t, err)
 	assert.Empty(t, userID)
 	assert.Contains(t, err.Error(), "app ID is not configured")
@@ -223,7 +243,7 @@ func TestValidateJWTAndExtractUserID_WrongSigningMethod(t *testing.T) {
 	tokenString, err := token.SignedString([]byte("some-secret"))
 	require.NoError(t, err)
 
-	userID, err := ValidateJWTAndExtractUserID(tokenString, testPublicKeyPEM, appID)
+	userID, err := ValidateJWTAndExtractUserID(tokenString, testPublicKeyPEM, appID, "local")
 	assert.Error(t, err)
 	assert.Empty(t, userID)
 	assert.Contains(t, err.Error(), "unexpected JWT signing method")
