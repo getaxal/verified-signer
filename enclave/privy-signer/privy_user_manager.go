@@ -26,10 +26,10 @@ func (cli *PrivyClient) GetUser(privyToken string) (*data.PrivyUser, *data.HttpE
 		}
 	}
 
-	if cli.userCache.Has(privyId) {
+	if item := cli.userCache.Get(privyId); item != nil {
 		log.Infof("Cache Hit: %s", privyId)
-		cacheHit := cli.userCache.Get(privyId).Value()
-		return &cacheHit, nil
+		value := item.Value()
+		return &value, nil
 	}
 
 	url := fmt.Sprintf("%s%s", cli.baseUrl, GET_USER_PATH.Build(privyId))
