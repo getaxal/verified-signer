@@ -8,19 +8,31 @@ import (
 	"net/http"
 
 	"github.com/getaxal/verified-signer/enclave/privy-signer/data"
+	"github.com/getaxal/verified-signer/enclave/privy-signer/jwt"
 	"github.com/jellydator/ttlcache/v3"
 	log "github.com/sirupsen/logrus"
 )
 
 // Gets a user given a Privy userID. It also checks to see if the user already has a delagted eth wallet, if it does not it will create one for them.
-func (cli *PrivyClient) GetUser(userId string) (*data.PrivyUser, *data.HttpError) {
-	if cli.userCache.Has(userId) {
-		log.Infof("Cache Hit: %s", userId)
-		cacheHit := cli.userCache.Get(userId).Value()
+func (cli *PrivyClient) GetUser(privyToken string) (*data.PrivyUser, *data.HttpError) {
+	privyId, err := jwt.ValidateJWTAndExtractUserID(privyToken, cli.privyConfig.JWTVerificationKey, cli.privyConfig.AppID, cli.Environment)
+	if err != nil {
+		log.Errorf("Unable to parse privy token: %v", err)
+		return nil, &data.HttpError{
+			Code: 401,
+			Message: data.Message{
+				Message: "Unauthorized User",
+			},
+		}
+	}
+
+	if cli.userCache.Has(privyId) {
+		log.Infof("Cache Hit: %s", privyId)
+		cacheHit := cli.userCache.Get(privyId).Value()
 		return &cacheHit, nil
 	}
 
-	url := fmt.Sprintf("%s%s", cli.baseUrl, GET_USER_PATH.Build(userId))
+	url := fmt.Sprintf("%s%s", cli.baseUrl, GET_USER_PATH.Build(privyId))
 
 	req, err := http.NewRequest("GET", url, nil)
 
@@ -77,13 +89,13 @@ func (cli *PrivyClient) GetUser(userId string) (*data.PrivyUser, *data.HttpError
 		}
 	}
 
-	userWithWallet, httpErr := cli.createUserWalletsIfNotExists(user, userId)
+	userWithWallet, httpErr := cli.createUserWalletsIfNotExists(user, privyId)
 
 	if httpErr != nil {
 		return nil, httpErr
 	}
 
-	cli.userCache.Set(userId, *userWithWallet, ttlcache.DefaultTTL)
+	cli.userCache.Set(privyId, *userWithWallet, ttlcache.DefaultTTL)
 
 	return userWithWallet, nil
 }
