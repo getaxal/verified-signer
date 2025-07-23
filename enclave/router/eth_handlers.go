@@ -9,17 +9,17 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Handles the Ethereum personalSign method. It takes the users userId as a path param and a EthPersonalSignRequest as the json body.
+// Handles the Ethereum personalSign method. It takes the privy jwt as a header and a EthPersonalSignRequest as the json body.
 // It fetches the users delegated eth wallet from the privy backend.
 func EthPersonalSignTxHandler(c *gin.Context) {
-	privyUserId := c.Param("userId")
+	privyJwt := c.GetHeader("privy-jwt")
 
-	if privyUserId == "" {
-		log.Errorf("Eth personal sign API error: missing user id")
+	if privyJwt == "" {
+		log.Errorf("Eth personal sign API error: missing privy token")
 		resp := privydata.Message{
-			Message: "privy user id query parameter is required",
+			Message: "Unauthorized user",
 		}
-		c.JSON(http.StatusBadRequest, resp)
+		c.JSON(http.StatusUnauthorized, resp)
 		return
 	}
 
@@ -45,7 +45,7 @@ func EthPersonalSignTxHandler(c *gin.Context) {
 		return
 	}
 
-	user, httpErr := privysigner.PrivyCli.GetUser(privyUserId)
+	user, httpErr := privysigner.PrivyCli.GetUser(privyJwt)
 	if httpErr != nil {
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
@@ -53,7 +53,7 @@ func EthPersonalSignTxHandler(c *gin.Context) {
 
 	ethWallet := user.GetUsersEthDelegatedWallet()
 	if ethWallet == nil || ethWallet.WalletID == "" {
-		log.Errorf("Eth personal sign API error user %s does not have a delegated eth wallet", privyUserId)
+		log.Errorf("Eth personal sign API error user %s does not have a delegated eth wallet", user.PrivyID)
 		resp := privydata.Message{
 			Message: "user does not have an delegated eth wallet",
 		}
@@ -63,7 +63,7 @@ func EthPersonalSignTxHandler(c *gin.Context) {
 
 	resp, httpErr := privysigner.PrivyCli.EthPersonalSign(&personalSignReq, ethWallet.WalletID)
 	if httpErr != nil {
-		log.Errorf("Eth personal sign API error user %s could not sign tx with err: %v", privyUserId, httpErr.Message.Message)
+		log.Errorf("Eth personal sign API error user %s could not sign tx with err: %v", user.PrivyID, httpErr.Message.Message)
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
 	}
@@ -74,14 +74,14 @@ func EthPersonalSignTxHandler(c *gin.Context) {
 // Handles the Ethereum eth_SignTransaction method. It takes the users userId as a path param and a EthSignTransactionRequest as the json body.
 // It fetches the users delegated eth wallet from the privy backend.
 func EthTransactionSignTxHandler(c *gin.Context) {
-	privyUserId := c.Param("userId")
+	privyJwt := c.GetHeader("privy-jwt")
 
-	if privyUserId == "" {
-		log.Errorf("Eth transaction sign API error missing user id")
+	if privyJwt == "" {
+		log.Errorf("Eth transaction sign API error: missing privy token")
 		resp := privydata.Message{
-			Message: "privy user id query parameter is required",
+			Message: "Unauthorized user",
 		}
-		c.JSON(http.StatusBadRequest, resp)
+		c.JSON(http.StatusUnauthorized, resp)
 		return
 	}
 
@@ -107,7 +107,7 @@ func EthTransactionSignTxHandler(c *gin.Context) {
 		return
 	}
 
-	user, httpErr := privysigner.PrivyCli.GetUser(privyUserId)
+	user, httpErr := privysigner.PrivyCli.GetUser(privyJwt)
 	if httpErr != nil {
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
@@ -115,7 +115,7 @@ func EthTransactionSignTxHandler(c *gin.Context) {
 
 	ethWallet := user.GetUsersEthDelegatedWallet()
 	if ethWallet == nil || ethWallet.WalletID == "" {
-		log.Errorf("Eth transaction sign API error user %s does not have a delegated eth wallet", privyUserId)
+		log.Errorf("Eth transaction sign API error user %s does not have a delegated eth wallet", user.PrivyID)
 		resp := privydata.Message{
 			Message: "user does not have an delegated eth wallet",
 		}
@@ -125,7 +125,7 @@ func EthTransactionSignTxHandler(c *gin.Context) {
 
 	resp, httpErr := privysigner.PrivyCli.EthSignTransaction(&transactionSignReq, ethWallet.WalletID)
 	if httpErr != nil {
-		log.Errorf("Eth transaction sign API error user %s could not sign tx with err: %v", privyUserId, httpErr.Message.Message)
+		log.Errorf("Eth transaction sign API error user %s could not sign tx with err: %v", user.PrivyID, httpErr.Message.Message)
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
 	}
@@ -136,14 +136,14 @@ func EthTransactionSignTxHandler(c *gin.Context) {
 // Handles the Ethereum eth_SendTransaction method. It takes the users userId as a path param and a EthSendTransactionRequest as the json body.
 // It fetches the users delegated eth wallet from the privy backend.
 func EthTransactionSendTxHandler(c *gin.Context) {
-	privyUserId := c.Param("userId")
+	privyJwt := c.GetHeader("privy-jwt")
 
-	if privyUserId == "" {
-		log.Errorf("Eth transaction send API error missing user id")
+	if privyJwt == "" {
+		log.Errorf("Eth transaction send API error: missing privy token")
 		resp := privydata.Message{
-			Message: "privy user id query parameter is required",
+			Message: "Unauthorized user",
 		}
-		c.JSON(http.StatusBadRequest, resp)
+		c.JSON(http.StatusUnauthorized, resp)
 		return
 	}
 
@@ -169,7 +169,7 @@ func EthTransactionSendTxHandler(c *gin.Context) {
 		return
 	}
 
-	user, httpErr := privysigner.PrivyCli.GetUser(privyUserId)
+	user, httpErr := privysigner.PrivyCli.GetUser(privyJwt)
 	if httpErr != nil {
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
@@ -177,7 +177,7 @@ func EthTransactionSendTxHandler(c *gin.Context) {
 
 	ethWallet := user.GetUsersEthDelegatedWallet()
 	if ethWallet == nil || ethWallet.WalletID == "" {
-		log.Errorf("Eth transaction send API error user %s does not have a delegated eth wallet", privyUserId)
+		log.Errorf("Eth transaction send API error user %s does not have a delegated eth wallet", user.PrivyID)
 		resp := privydata.Message{
 			Message: "user does not have an delegated eth wallet",
 		}
@@ -187,7 +187,7 @@ func EthTransactionSendTxHandler(c *gin.Context) {
 
 	resp, httpErr := privysigner.PrivyCli.EthSendTransaction(&transactionSendReq, ethWallet.WalletID)
 	if httpErr != nil {
-		log.Errorf("Eth transaction send API error user %s could not send tx with err: %v", privyUserId, err)
+		log.Errorf("Eth transaction send API error user %s could not send tx with err: %v", user.PrivyID, err)
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
 	}
@@ -198,14 +198,14 @@ func EthTransactionSendTxHandler(c *gin.Context) {
 // Handles the Ethereum secp256k1_sign method. It takes the users userId as a path param and a EthSecp256k1SignResponse as the json body.
 // It fetches the users delegated eth wallet from the privy backend.
 func EthSecp256k1SignTxHandler(c *gin.Context) {
-	privyUserId := c.Param("userId")
+	privyJwt := c.GetHeader("privy-jwt")
 
-	if privyUserId == "" {
-		log.Errorf("Eth secp256k1 API error: missing user id")
+	if privyJwt == "" {
+		log.Errorf("Eth transaction secp256k1 sign API error: missing privy token")
 		resp := privydata.Message{
-			Message: "privy user id query parameter is required",
+			Message: "Unauthorized user",
 		}
-		c.JSON(http.StatusBadRequest, resp)
+		c.JSON(http.StatusUnauthorized, resp)
 		return
 	}
 
@@ -231,7 +231,7 @@ func EthSecp256k1SignTxHandler(c *gin.Context) {
 		return
 	}
 
-	user, httpErr := privysigner.PrivyCli.GetUser(privyUserId)
+	user, httpErr := privysigner.PrivyCli.GetUser(privyJwt)
 	if httpErr != nil {
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
@@ -239,7 +239,7 @@ func EthSecp256k1SignTxHandler(c *gin.Context) {
 
 	ethWallet := user.GetUsersEthDelegatedWallet()
 	if ethWallet == nil || ethWallet.WalletID == "" {
-		log.Errorf("Eth secp256k1 sign API error user %s does not have a delegated eth wallet", privyUserId)
+		log.Errorf("Eth secp256k1 sign API error user %s does not have a delegated eth wallet", user.PrivyID)
 		resp := privydata.Message{
 			Message: "user does not have an delegated eth wallet",
 		}
@@ -249,7 +249,7 @@ func EthSecp256k1SignTxHandler(c *gin.Context) {
 
 	resp, httpErr := privysigner.PrivyCli.EthSecp256k1Sign(&secp256k1Sign, ethWallet.WalletID)
 	if httpErr != nil {
-		log.Errorf("Eth secp256k1 sign API error user %s could not sign tx with err: %v", privyUserId, httpErr.Message.Message)
+		log.Errorf("Eth secp256k1 sign API error user %s could not sign tx with err: %v", user.PrivyID, httpErr.Message.Message)
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
 	}

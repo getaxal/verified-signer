@@ -10,17 +10,18 @@ import (
 )
 
 func GetUserHandler(c *gin.Context) {
-	privyUserId := c.Param("userId")
-	if privyUserId == "" {
-		log.Errorf("Get User API error: missing privy user id")
+	privyJwt := c.GetHeader("privy-jwt")
+
+	if privyJwt == "" {
+		log.Errorf("Get user API error: missing privy token")
 		resp := privydata.Message{
-			Message: "privy user id query parameter is required",
+			Message: "Unauthorized user",
 		}
-		c.JSON(http.StatusBadRequest, resp)
+		c.JSON(http.StatusUnauthorized, resp)
 		return
 	}
 
-	user, httpErr := privysigner.PrivyCli.GetUser(privyUserId)
+	user, httpErr := privysigner.PrivyCli.GetUser(privyJwt)
 	if httpErr != nil {
 		c.JSON(httpErr.Code, httpErr.Message)
 		return

@@ -19,6 +19,7 @@ import (
 var PrivyCli *PrivyClient
 
 type PrivyClient struct {
+	Environment   string
 	baseUrl       string
 	client        *http.Client
 	privyConfig   *PrivyConfig
@@ -49,6 +50,7 @@ func InitNewPrivyClient(configPath string, portsCfg *enclave.PortConfig, environ
 	)
 
 	PrivyCli = &PrivyClient{
+		Environment:   environment.GetEnv(),
 		baseUrl:       "https://api.privy.io",
 		client:        privyClient,
 		privyConfig:   privyConfig,

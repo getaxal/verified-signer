@@ -656,8 +656,8 @@ func TestLoadEnvConfig_NonExistentFile(t *testing.T) {
 		t.Error("Expected config to be nil for non-existent file")
 	}
 
-	if !contains(err.Error(), "failed to load config from") {
-		t.Errorf("Expected error message to contain 'failed to load config from', got: %s", err.Error())
+	if !contains(err.Error(), "no env loaded from") {
+		t.Errorf("Expected error message to contain 'no env loaded from', got: %s", err.Error())
 	}
 }
 
@@ -683,9 +683,9 @@ func TestEnvironmentConfig_GetEnv(t *testing.T) {
 			expected:    "local",
 		},
 		{
-			name:        "invalid environment defaults to local",
+			name:        "staging environment",
 			environment: "staging",
-			expected:    "local",
+			expected:    "staging",
 		},
 		{
 			name:        "empty environment defaults to local",

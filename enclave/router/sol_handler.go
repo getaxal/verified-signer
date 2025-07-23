@@ -12,14 +12,14 @@ import (
 // Handles the Solana signMessage method. It takes the users userId as a path param and a SolSignMessageRequest as the json body.
 // It fetches the users delegated sol wallet from the privy backend.
 func SolSignMessageTxHandler(c *gin.Context) {
-	privyUserId := c.Param("userId")
+	privyJwt := c.GetHeader("privy-jwt")
 
-	if privyUserId == "" {
-		log.Errorf("Sol signMessage API error: missing user id")
+	if privyJwt == "" {
+		log.Errorf("Sol sign message API error: missing privy token")
 		resp := privydata.Message{
-			Message: "privy user id query parameter is required",
+			Message: "Unauthorized user",
 		}
-		c.JSON(http.StatusBadRequest, resp)
+		c.JSON(http.StatusUnauthorized, resp)
 		return
 	}
 
@@ -45,7 +45,7 @@ func SolSignMessageTxHandler(c *gin.Context) {
 		return
 	}
 
-	user, httpErr := privysigner.PrivyCli.GetUser(privyUserId)
+	user, httpErr := privysigner.PrivyCli.GetUser(privyJwt)
 	if httpErr != nil {
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
@@ -53,7 +53,7 @@ func SolSignMessageTxHandler(c *gin.Context) {
 
 	solWallet := user.GetUsersSolDelegatedWallet()
 	if solWallet == nil || solWallet.WalletID == "" {
-		log.Errorf("Sol signMessage API error user %s does not have a delegated sol wallet", privyUserId)
+		log.Errorf("Sol signMessage API error user %s does not have a delegated sol wallet", user.PrivyID)
 		resp := privydata.Message{
 			Message: "user does not have an delegated sol wallet",
 		}
@@ -63,7 +63,7 @@ func SolSignMessageTxHandler(c *gin.Context) {
 
 	resp, httpErr := privysigner.PrivyCli.SolSignMessage(&personalSignReq, solWallet.WalletID)
 	if httpErr != nil {
-		log.Errorf("Sol signMessage API error user %s could not sign tx with err: %v", privyUserId, httpErr.Message.Message)
+		log.Errorf("Sol signMessage API error user %s could not sign tx with err: %v", user.PrivyID, httpErr.Message.Message)
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
 	}
@@ -74,14 +74,14 @@ func SolSignMessageTxHandler(c *gin.Context) {
 // Handles the Solana signTransaction method. It takes the users userId as a path param and a SolSignTransactionRequest as the json body.
 // It fetches the users delegated sol wallet from the privy backend.
 func SolSignTxHandler(c *gin.Context) {
-	privyUserId := c.Param("userId")
+	privyJwt := c.GetHeader("privy-jwt")
 
-	if privyUserId == "" {
-		log.Errorf("Solana signTransaction API error missing user id")
+	if privyJwt == "" {
+		log.Errorf("Sol sign transaction API error: missing privy token")
 		resp := privydata.Message{
-			Message: "privy user id query parameter is required",
+			Message: "Unauthorized user",
 		}
-		c.JSON(http.StatusBadRequest, resp)
+		c.JSON(http.StatusUnauthorized, resp)
 		return
 	}
 
@@ -107,7 +107,7 @@ func SolSignTxHandler(c *gin.Context) {
 		return
 	}
 
-	user, httpErr := privysigner.PrivyCli.GetUser(privyUserId)
+	user, httpErr := privysigner.PrivyCli.GetUser(privyJwt)
 	if httpErr != nil {
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
@@ -115,7 +115,7 @@ func SolSignTxHandler(c *gin.Context) {
 
 	solWallet := user.GetUsersSolDelegatedWallet()
 	if solWallet == nil || solWallet.WalletID == "" {
-		log.Errorf("Solana signTransaction API error user %s does not have a delegated eth wallet", privyUserId)
+		log.Errorf("Solana signTransaction API error user %s does not have a delegated eth wallet", user.PrivyID)
 		resp := privydata.Message{
 			Message: "user does not have an delegated sol wallet",
 		}
@@ -125,7 +125,7 @@ func SolSignTxHandler(c *gin.Context) {
 
 	resp, httpErr := privysigner.PrivyCli.SolSignTransaction(&transactionSignReq, solWallet.WalletID)
 	if httpErr != nil {
-		log.Errorf("Solana signTransaction API error user %s could not sign tx with err: %v", privyUserId, httpErr.Message.Message)
+		log.Errorf("Solana signTransaction API error user %s could not sign tx with err: %v", user.PrivyID, httpErr.Message.Message)
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
 	}
@@ -136,14 +136,14 @@ func SolSignTxHandler(c *gin.Context) {
 // Handles the Solana signAndSendTransaction method. It takes the users userId as a path param and a SolSignAndSendTransactionRequest as the json body.
 // It fetches the users delegated sol wallet from the privy backend.
 func SolSignAndSendTxHandler(c *gin.Context) {
-	privyUserId := c.Param("userId")
+	privyJwt := c.GetHeader("privy-jwt")
 
-	if privyUserId == "" {
-		log.Errorf("Eth transaction send API error missing user id")
+	if privyJwt == "" {
+		log.Errorf("Sol send transaction API error: missing privy token")
 		resp := privydata.Message{
-			Message: "privy user id query parameter is required",
+			Message: "Unauthorized user",
 		}
-		c.JSON(http.StatusBadRequest, resp)
+		c.JSON(http.StatusUnauthorized, resp)
 		return
 	}
 
@@ -169,7 +169,7 @@ func SolSignAndSendTxHandler(c *gin.Context) {
 		return
 	}
 
-	user, httpErr := privysigner.PrivyCli.GetUser(privyUserId)
+	user, httpErr := privysigner.PrivyCli.GetUser(privyJwt)
 	if httpErr != nil {
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
@@ -177,7 +177,7 @@ func SolSignAndSendTxHandler(c *gin.Context) {
 
 	solWallet := user.GetUsersSolDelegatedWallet()
 	if solWallet == nil || solWallet.WalletID == "" {
-		log.Errorf("Sol signAndSend API error user %s does not have a delegated eth wallet", privyUserId)
+		log.Errorf("Sol signAndSend API error user %s does not have a delegated eth wallet", user.PrivyID)
 		resp := privydata.Message{
 			Message: "user does not have an delegated eth wallet",
 		}
@@ -187,7 +187,7 @@ func SolSignAndSendTxHandler(c *gin.Context) {
 
 	resp, httpErr := privysigner.PrivyCli.SolSignAndSendTransaction(&transactionSendReq, solWallet.WalletID)
 	if httpErr != nil {
-		log.Errorf("Sol signAndSend API error user %s could not send tx with err: %v", privyUserId, err)
+		log.Errorf("Sol signAndSend API error user %s could not send tx with err: %v", user.PrivyID, err)
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
 	}
