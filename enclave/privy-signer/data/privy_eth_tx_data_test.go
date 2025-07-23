@@ -3,7 +3,6 @@ package data
 import (
 	"testing"
 
-	"github.com/getaxal/verified-signer/enclave"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +18,7 @@ func TestEthSignTransactionRequest_ValidateTxRequest_Success(t *testing.T) {
 		}{
 			Transaction: EthTransaction{
 				To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-				Value: enclave.ToInt64Ptr(1000000000000000000), // 1 ETH
+				Value: NewBigIntFromInt64(int64(1000000000000000000)), // 1 ETH
 			},
 		},
 	}
@@ -108,7 +107,7 @@ func TestEthSendTransactionRequest_ValidateTxRequest_Success(t *testing.T) {
 		}{
 			Transaction: EthTransaction{
 				To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-				Value: enclave.ToInt64Ptr(1000000000000000000),
+				Value: NewBigIntFromInt64(int64(1000000000000000000)),
 			},
 		},
 	}
@@ -578,7 +577,7 @@ func TestEthPersonalSignRequest_ValidateTxRequest_TableDriven(t *testing.T) {
 func TestNewSignTransactionRequest(t *testing.T) {
 	tx := &EthTransaction{
 		To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		Value: enclave.ToInt64Ptr(1000000000000000000),
+		Value: NewBigIntFromInt64(int64(1000000000000000000)),
 	}
 
 	req := NewEthSignTransactionRequest(tx)
@@ -596,7 +595,7 @@ func TestNewSignTransactionRequest(t *testing.T) {
 func TestNewSendTransactionRequest(t *testing.T) {
 	tx := &EthTransaction{
 		To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		Value: enclave.ToInt64Ptr(1000000000000000000),
+		Value: NewBigIntFromInt64(int64(1000000000000000000)),
 	}
 	caip2 := "eip155:11155111"
 	chainType := "ethereum"
@@ -640,7 +639,7 @@ func TestEthSignTransactionRequest_GetMethod(t *testing.T) {
 func TestEthSignTransactionRequest_GetTransaction(t *testing.T) {
 	tx := EthTransaction{
 		To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		Value: enclave.ToInt64Ptr(1000000000000000000),
+		Value: NewBigIntFromInt64(int64(1000000000000000000)),
 	}
 	req := &EthSignTransactionRequest{
 		Params: struct {
@@ -662,7 +661,7 @@ func TestEthSendTransactionRequest_GetMethod(t *testing.T) {
 func TestEthSendTransactionRequest_GetTransaction(t *testing.T) {
 	tx := EthTransaction{
 		To:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		Value: enclave.ToInt64Ptr(1000000000000000000),
+		Value: NewBigIntFromInt64(int64(1000000000000000000)),
 	}
 	req := &EthSendTransactionRequest{
 		Params: struct {
@@ -692,17 +691,17 @@ func TestEthPersonalSignRequest_GetTransaction(t *testing.T) {
 func TestValidation_WithComplexTransactionData(t *testing.T) {
 	// Test with all transaction fields populated
 	tx := &EthTransaction{
-		ChainID:              enclave.ToInt64Ptr(11155111),
+		ChainID:              NewBigIntFromInt64(int64(11155111)),
 		Data:                 "0x1234567890abcdef",
 		From:                 "0x742d35Cc6E7c8D2a3C8d65C5c8c5c8c5c8c5c8c5",
-		GasLimit:             enclave.ToInt64Ptr(50000),
-		GasPrice:             enclave.ToInt64Ptr(20000000000),
-		MaxFeePerGas:         enclave.ToInt64Ptr(1000308),
-		MaxPriorityFeePerGas: enclave.ToInt64Ptr(1000000),
-		Nonce:                enclave.ToInt64Ptr(0),
+		GasLimit:             NewBigIntFromInt64(int64(50000)),
+		GasPrice:             NewBigIntFromInt64(int64(20000000000)),
+		MaxFeePerGas:         NewBigIntFromInt64(int64(1000308)),
+		MaxPriorityFeePerGas: NewBigIntFromInt64(int64(1000000)),
+		Nonce:                NewBigIntFromInt64(int64(0)),
 		To:                   "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		Type:                 enclave.ToInt64Ptr(2),
-		Value:                enclave.ToInt64Ptr(1000000000000000000),
+		Type:                 NewBigIntFromInt64(int64(2)),
+		Value:                NewBigIntFromInt64(int64(1000000000000000000)),
 	}
 
 	signReq := NewEthSignTransactionRequest(tx)
