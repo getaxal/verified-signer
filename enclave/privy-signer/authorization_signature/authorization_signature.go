@@ -52,12 +52,12 @@ func GetAuthorizationSignature(body interface{}, methodType string, privyAuthori
 		return "", err
 	}
 
-	signature, err := SignPayload(privyAuthorizationKey, string(canonical))
+	signature, err := SignPayload([]byte(privyAuthorizationKey), canonical)
 
 	if err != nil {
 		log.Errorf("Error: %v", err)
 		return "", err
 	}
 
-	return signature, nil
+	return string(signature), nil
 }

@@ -3,6 +3,7 @@ module github.com/getaxal/verified-signer/enclave
 go 1.24
 
 require (
+	github.com/awnumar/memguard v0.22.5
 	github.com/ethereum/go-ethereum v1.16.1
 	github.com/gin-gonic/gin v1.10.1
 	github.com/golang-jwt/jwt/v5 v5.2.3
@@ -12,6 +13,7 @@ require (
 )
 
 require (
+	github.com/awnumar/memcall v0.2.0 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
