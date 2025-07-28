@@ -18,6 +18,10 @@ NC='\033[0m' # No Color
 
 # Create log directory
 mkdir -p "$LOG_DIR"
+chmod 750 "$LOG_DIR"  # Owner rwx, group rx, other none
+touch "$BUILD_LOG" "$CONSOLE_LOG" "$ENCLAVE_LOG"
+chmod 640 "$BUILD_LOG" "$CONSOLE_LOG" "$ENCLAVE_LOG"  # Owner rw, group r, other none
+chown root:nitro-enclave "$BUILD_LOG" "$CONSOLE_LOG" "$ENCLAVE_LOG" 2>/dev/null || true
 
 echo "🏭 Production Docker Build (Clean Build)"
 echo "========================================"
