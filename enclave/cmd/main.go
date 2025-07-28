@@ -25,8 +25,7 @@ func main() {
 	portCfg, err := enclave.LoadPortConfig(*configPath)
 
 	if err != nil {
-		log.Errorf("Could not fetch Port config due to err: %v", err)
-		return
+		log.Fatalf("Could not fetch Port config due to err: %v", err)
 	}
 
 	PortsConfig = portCfg
@@ -34,8 +33,7 @@ func main() {
 	envCfg, err := enclave.LoadEnvConfig(*configPath)
 
 	if err != nil {
-		log.Errorf("Could not fetch Env config due to err: %v", err)
-		return
+		log.Fatalf("Could not fetch Env config due to err: %v", err)
 	}
 
 	err = privysigner.InitNewPrivyClient(*configPath, PortsConfig, envCfg)
