@@ -127,8 +127,9 @@ func (req *EthSendTransactionRequest) ValidateTxRequest() error {
 		return fmt.Errorf("missing to field in the transaction, it is required")
 	}
 
-	if req.CAIP2 == "" {
-		return fmt.Errorf("missing CAIP2 field in the transaction, it is required")
+	// Checks for eth mainnet or base
+	if req.CAIP2 != "eip155:1" && req.CAIP2 != "eip155:8453" {
+		return fmt.Errorf("invalid CAIP2 field in the transaction, it is required")
 	}
 
 	if req.ChainType != "ethereum" {
