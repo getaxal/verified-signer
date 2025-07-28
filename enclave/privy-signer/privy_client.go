@@ -46,7 +46,8 @@ func InitNewPrivyClient(configPath string, portsCfg *enclave.PortConfig, environ
 
 	authorization := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 	cache := ttlcache.New(
-		ttlcache.WithTTL[string, data.PrivyUser](30 * time.Minute),
+		ttlcache.WithTTL[string, data.PrivyUser](30*time.Minute),
+		ttlcache.WithCapacity[string, data.PrivyUser](1000),
 	)
 
 	PrivyCli = &PrivyClient{
