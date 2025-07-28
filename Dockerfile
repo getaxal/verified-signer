@@ -8,7 +8,6 @@ RUN apk add --no-cache git openssh-client
 
 # Set up Go private module
 ENV GOPROXY=direct
-ENV GOSUMDB=off
 
 WORKDIR /app
 
