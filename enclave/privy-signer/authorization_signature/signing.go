@@ -13,6 +13,11 @@ import (
 	"github.com/awnumar/memguard"
 )
 
+func init() {
+	// Initialize memguard session and setup interrupt handling
+	memguard.CatchInterrupt()
+}
+
 // secureMemory provides memory that's protected from swapping and cleared properly
 type secureMemory struct {
 	buffer *memguard.LockedBuffer
@@ -109,29 +114,30 @@ func parsePrivateKeyFromAuthorizationKeyBytes(authKeyBytes []byte) (*ecdsa.Priva
 
 // SignPayload signs the canonicalized JSON payload using ECDSA (P-256 + SHA-256)
 func SignPayload(privyAuthorizationKeyBytes, payloadBytes []byte) ([]byte, error) {
-	authMem := newSecureMemoryFromData(privyAuthorizationKeyBytes)
-	defer authMem.destroy()
-
-	payloadMem := newSecureMemoryFromData(payloadBytes)
-	defer payloadMem.destroy()
-
-	authData := authMem.bytes()
-
-	privateKey, err := parsePrivateKeyFromAuthorizationKeyBytes(authData)
+	// Parse private key first
+	privateKey, err := parsePrivateKeyFromAuthorizationKeyBytes(privyAuthorizationKeyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse private key: %w", err)
 	}
 
+	payloadMem := newSecureMemoryFromData(payloadBytes)
+	defer payloadMem.destroy()
+
 	payloadData := payloadMem.bytes()
 
-	// Hash the payload
+	// Create secure memory for hash computation
+	hashMem := newSecureMemory(sha256.Size)
+	defer hashMem.destroy()
+
+	// Hash the payload directly into secure memory
 	hasher := sha256.New()
 	hasher.Write(payloadData)
 	hashBytes := hasher.Sum(nil)
-	defer secureZero(hashBytes)
+	copy(hashMem.bytes(), hashBytes)
+	secureZero(hashBytes) // Clear the temporary hash
 
-	// Sign the hash
-	signature, err := ecdsa.SignASN1(rand.Reader, privateKey, hashBytes)
+	// Sign the hash from secure memory
+	signature, err := ecdsa.SignASN1(rand.Reader, privateKey, hashMem.bytes())
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign payload: %w", err)
 	}
@@ -155,23 +161,29 @@ func VerifySignature(publicKey *ecdsa.PublicKey, payloadBytes, signatureB64Bytes
 	payloadData := payloadMem.bytes()
 	sigData := sigMem.bytes()
 
-	// Decode signature
-	sigBytes := make([]byte, base64.StdEncoding.DecodedLen(len(sigData)))
-	defer secureZero(sigBytes)
+	// Create secure memory for decoded signature
+	sigSize := base64.StdEncoding.DecodedLen(len(sigData))
+	sigBytesMem := newSecureMemory(sigSize)
+	defer sigBytesMem.destroy()
 
-	actualSigSize, err := base64.StdEncoding.Decode(sigBytes, sigData)
+	actualSigSize, err := base64.StdEncoding.Decode(sigBytesMem.bytes(), sigData)
 	if err != nil {
 		return false, fmt.Errorf("failed to decode signature: %w", err)
 	}
 
-	// Hash the payload
+	// Create secure memory for hash computation
+	hashMem := newSecureMemory(sha256.Size)
+	defer hashMem.destroy()
+
+	// Hash the payload directly into secure memory
 	hasher := sha256.New()
 	hasher.Write(payloadData)
 	hashBytes := hasher.Sum(nil)
-	defer secureZero(hashBytes)
+	copy(hashMem.bytes(), hashBytes)
+	secureZero(hashBytes) // Clear the temporary hash
 
-	// Verify signature
-	valid := ecdsa.VerifyASN1(publicKey, hashBytes, sigBytes[:actualSigSize])
+	// Verify signature using data from secure memories
+	valid := ecdsa.VerifyASN1(publicKey, hashMem.bytes(), sigBytesMem.bytes()[:actualSigSize])
 	return valid, nil
 }
 
