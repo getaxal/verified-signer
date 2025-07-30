@@ -68,8 +68,11 @@ func InitSimpleHTTPToVsockProxy(ctx context.Context, tcpPort uint32, vsockPort u
 
 	// Create and start the server
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", tcpPort),
-		Handler: handler,
+		Addr:         fmt.Sprintf(":%d", tcpPort),
+		Handler:      handler,
+		ReadTimeout:  20 * time.Second,
+		WriteTimeout: 20 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {
