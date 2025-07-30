@@ -18,7 +18,7 @@ func main() {
 	// Proxy for Vsock to TCP for privy APIs
 	go network.InitVsockToTcpProxy(ctx, 50002, 443, "https://api.privy.io")
 	// Proxy for TCP to Vsock for Backend to reach the enclave
-	go network.InitTcpToVsockProxy(ctx, 8080, 50003)
+	go network.InitSimpleHTTPToVsockProxy(ctx, 8080, 50003, 5)
 
 	go network.InitVsockToTcpProxy(ctx, 50004, 80, "http://169.254.169.254")
 

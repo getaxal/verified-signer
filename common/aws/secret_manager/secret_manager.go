@@ -59,7 +59,7 @@ type EC2Credentials struct {
 // environment should be "dev", "prod", or "local"
 func NewSecretManager(cfgPath string, environment string, smPort uint32, ec2Port uint32) (*SecretManager, error) {
 	sm := &SecretManager{
-		EC2CredentialsClient: network.InitHttpClientWithVsockTransport(ec2Port),
+		EC2CredentialsClient: network.InitHttpClientWithVsockTransportEnclave(ec2Port),
 		Environment:          environment,
 	}
 
