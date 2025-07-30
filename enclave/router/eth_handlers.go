@@ -187,7 +187,7 @@ func EthTransactionSendTxHandler(c *gin.Context) {
 
 	resp, httpErr := privysigner.PrivyCli.EthSendTransaction(&transactionSendReq, ethWallet.WalletID)
 	if httpErr != nil {
-		log.Errorf("Eth transaction send API error user %s could not send tx with err: %v", user.PrivyID, err)
+		log.Errorf("Eth transaction send API error user %s could not send tx with err: %v", user.PrivyID, httpErr.Message.Message)
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
 	}

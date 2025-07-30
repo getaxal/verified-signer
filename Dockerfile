@@ -8,7 +8,6 @@ RUN apk add --no-cache git openssh-client
 
 # Set up Go private module
 ENV GOPROXY=direct
-ENV GOSUMDB=off
 
 WORKDIR /app
 
@@ -35,19 +34,31 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -a -installsuffix cgo -o m
 # Stage 2: Runtime image
 FROM alpine:latest
 
-WORKDIR /root/
-
 # Install CA certificates for HTTPS requests
 RUN apk add --no-cache ca-certificates
 
-# Copy the binary from builder stage
-COPY --from=builder /app/enclave/main .
+# Create a non-root user and group
+RUN addgroup -g 1000 -S appuser && \
+    adduser -u 1000 -S appuser -G appuser
 
-# Copy config file if it exists
-COPY --from=builder /app/enclave/config.yaml . 
+# Create app directory and set ownership
+RUN mkdir -p /home/appuser/app && \
+    chown -R appuser:appuser /home/appuser
+
+# Switch to the app directory
+WORKDIR /home/appuser/app
+
+# Copy the binary from builder stage with proper ownership
+COPY --from=builder --chown=appuser:appuser /app/enclave/main .
+
+# Copy config file if it exists with proper ownership
+COPY --from=builder --chown=appuser:appuser /app/enclave/config.yaml . 
 
 # Make binary executable
 RUN chmod +x ./main
 
+# Switch to non-root user
+USER appuser
+
 # Run the application
-CMD ["/root/main", "-config", "/root/config.yaml"]
+CMD ["./main", "-config", "./config.yaml"]

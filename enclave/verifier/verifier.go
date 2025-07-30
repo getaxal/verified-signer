@@ -35,7 +35,7 @@ func (v *Verifier) VerifyEthTxRequest(req data.EthTxRequest) bool {
 			return false
 		}
 
-		if !v.verifiedAddresses.IsWhitelisted(tx.To) {
+		if !v.verifiedAddresses.IsWhitelistedString(tx.To) {
 			return false
 		}
 		return true
@@ -47,7 +47,7 @@ func (v *Verifier) VerifyEthTxRequest(req data.EthTxRequest) bool {
 			return false
 		}
 
-		if !v.verifiedAddresses.IsWhitelisted(tx.To) {
+		if !v.verifiedAddresses.IsWhitelistedString(tx.To) {
 			return false
 		}
 		return true

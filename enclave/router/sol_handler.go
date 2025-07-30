@@ -115,7 +115,7 @@ func SolSignTxHandler(c *gin.Context) {
 
 	solWallet := user.GetUsersSolDelegatedWallet()
 	if solWallet == nil || solWallet.WalletID == "" {
-		log.Errorf("Solana signTransaction API error user %s does not have a delegated eth wallet", user.PrivyID)
+		log.Errorf("Solana signTransaction API error user %s does not have a delegated sol wallet", user.PrivyID)
 		resp := privydata.Message{
 			Message: "user does not have an delegated sol wallet",
 		}
@@ -177,9 +177,9 @@ func SolSignAndSendTxHandler(c *gin.Context) {
 
 	solWallet := user.GetUsersSolDelegatedWallet()
 	if solWallet == nil || solWallet.WalletID == "" {
-		log.Errorf("Sol signAndSend API error user %s does not have a delegated eth wallet", user.PrivyID)
+		log.Errorf("Sol signAndSend API error user %s does not have a delegated sol wallet", user.PrivyID)
 		resp := privydata.Message{
-			Message: "user does not have an delegated eth wallet",
+			Message: "user does not have an delegated sol wallet",
 		}
 		c.JSON(http.StatusBadRequest, resp)
 		return
@@ -187,7 +187,7 @@ func SolSignAndSendTxHandler(c *gin.Context) {
 
 	resp, httpErr := privysigner.PrivyCli.SolSignAndSendTransaction(&transactionSendReq, solWallet.WalletID)
 	if httpErr != nil {
-		log.Errorf("Sol signAndSend API error user %s could not send tx with err: %v", user.PrivyID, err)
+		log.Errorf("Sol signAndSend API error user %s could not send tx with err: %v", user.PrivyID, httpErr.Message.Message)
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
 	}
