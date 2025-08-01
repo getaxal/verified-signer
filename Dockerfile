@@ -3,10 +3,7 @@
 # Stage 1: Build
 FROM golang:1.24-alpine AS builder
 
-# Install necessary packages
-RUN apk add --no-cache git openssh-client
-
-# Set up Go private module
+RUN apk add --no-cache git openssh-client ca-certificates
 ENV GOPROXY=direct
 
 WORKDIR /app
@@ -27,38 +24,21 @@ WORKDIR /app
 COPY common/ ./common/
 COPY enclave/ ./enclave/
 
-# Build the application
+# Build the application with static linking for Nitro Enclaves
 WORKDIR /app/enclave
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -a -installsuffix cgo -o main ./cmd
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -v -a -ldflags '-s -w -extldflags "-static"' \
+    -installsuffix cgo \
+    -o main ./cmd
 
-# Stage 2: Runtime image
-FROM alpine:latest
+# Stage 2: Distroless runtime (includes non-root user)
+FROM gcr.io/distroless/static:nonroot
 
-# Install CA certificates for HTTPS requests
-RUN apk add --no-cache ca-certificates
+# Copy the static binary
+COPY --from=builder /app/enclave/main /main
 
-# Create a non-root user and group
-RUN addgroup -g 1000 -S appuser && \
-    adduser -u 1000 -S appuser -G appuser
+# Copy config file
+COPY --from=builder /app/enclave/config.yaml /config.yaml
 
-# Create app directory and set ownership
-RUN mkdir -p /home/appuser/app && \
-    chown -R appuser:appuser /home/appuser
-
-# Switch to the app directory
-WORKDIR /home/appuser/app
-
-# Copy the binary from builder stage with proper ownership
-COPY --from=builder --chown=appuser:appuser /app/enclave/main .
-
-# Copy config file if it exists with proper ownership
-COPY --from=builder --chown=appuser:appuser /app/enclave/config.yaml . 
-
-# Make binary executable
-RUN chmod +x ./main
-
-# Switch to non-root user
-USER appuser
-
-# Run the application
-CMD ["./main", "-config", "./config.yaml"]
+# Use single CMD with all arguments
+CMD ["/main", "-config", "/config.yaml"]
