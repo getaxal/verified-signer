@@ -44,7 +44,7 @@ func (cli *PrivyClient) prepSigningTxRequest(body interface{}, walletId string) 
 	cli.addStandardPrivyHeaders(req)
 
 	// Add auth signature header
-	signature, err := authorizationsignature.GetAuthorizationSignature(body, req.Method, cli.privyConfig.DelegatedActionsKey, url, cli.privyConfig.AppID)
+	signature, err := authorizationsignature.GetAuthorizationSignature(body, req.Method, cli.teeConfig.Privy.DelegatedActionsKey, url, cli.teeConfig.Privy.AppID)
 	if err != nil {
 		log.Errorf("Error getting authorization signature: %v", err)
 		return nil, err

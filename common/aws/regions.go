@@ -55,6 +55,8 @@ const (
 	ILCentral1 AWSRegion = "il-central-1" // Israel (Tel Aviv)
 )
 
+const DEFAULT_AWS_REGION = "us-east-2"
+
 // validRegions is a set of all valid AWS regions for O(1) lookup
 var validRegions = map[AWSRegion]bool{
 	USEast1: true, USEast2: true, USWest1: true, USWest2: true, USGovEast1: true, USGovWest1: true,

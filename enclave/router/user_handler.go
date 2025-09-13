@@ -10,10 +10,10 @@ import (
 )
 
 func GetUserHandler(c *gin.Context) {
-	privyJwt := c.GetHeader("privy-jwt")
+	privyJwt := c.GetHeader("auth")
 
 	if privyJwt == "" {
-		log.Errorf("Get user API error: missing privy token")
+		log.Errorf("Get user API error: missing auth")
 		resp := privydata.Message{
 			Message: "Unauthorized user",
 		}

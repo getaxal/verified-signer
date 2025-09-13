@@ -1,4 +1,4 @@
-package jwt
+package auth
 
 import (
 	"encoding/base64"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getaxal/verified-signer/enclave"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	log "github.com/sirupsen/logrus"
@@ -61,21 +62,21 @@ func validatePrivyClaims(claims *PrivyClaims, appID, env string) error {
 }
 
 // validateJWTAndExtractUserID validates a Privy JWT token using ES256 and extracts the user ID
-func ValidateJWTAndExtractUserID(tokenString, verificationKey, appID, env string) (string, error) {
+func ValidateJWTAndExtractUserID(tokenString string, teeCfg *enclave.TEEConfig) (string, error) {
 	if tokenString == "" {
 		return "", fmt.Errorf("token cannot be empty")
 	}
 
-	if verificationKey == "" {
+	if teeCfg.Privy.JWTVerificationKey == "" {
 		return "", fmt.Errorf("verification key is not configured")
 	}
 
-	if appID == "" {
+	if teeCfg.Privy.AppID == "" {
 		return "", fmt.Errorf("app ID is not configured")
 	}
 
 	// Format the PEM key properly - handle both escaped newlines and space-separated format
-	formattedVerificationKey := verificationKey
+	formattedVerificationKey := teeCfg.Privy.JWTVerificationKey
 
 	// First try to handle escaped newlines (for JSON strings)
 	formattedVerificationKey = strings.ReplaceAll(formattedVerificationKey, "\\n", "\n")
@@ -164,7 +165,7 @@ func ValidateJWTAndExtractUserID(tokenString, verificationKey, appID, env string
 	}
 
 	// Validate Privy-specific claims
-	if err := validatePrivyClaims(privyClaim, appID, env); err != nil {
+	if err := validatePrivyClaims(privyClaim, teeCfg.Privy.AppID, teeCfg.Environment); err != nil {
 		return "", fmt.Errorf("JWT claims are invalid: %w", err)
 	}
 
