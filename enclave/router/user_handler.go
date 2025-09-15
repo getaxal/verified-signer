@@ -10,9 +10,9 @@ import (
 )
 
 func GetUserHandler(c *gin.Context) {
-	privyJwt := c.GetHeader("auth")
+	auth := c.GetHeader("auth") // auth for this request is privy jwt
 
-	if privyJwt == "" {
+	if auth == "" {
 		log.Errorf("Get user API error: missing auth")
 		resp := privydata.Message{
 			Message: "Unauthorized user",
@@ -21,7 +21,13 @@ func GetUserHandler(c *gin.Context) {
 		return
 	}
 
-	user, httpErr := privysigner.PrivyCli.GetUser(privyJwt)
+	privyId, httpErr := privysigner.PrivyCli.ValidateAuthForGetUserRequest(auth)
+	if httpErr != nil {
+		c.JSON(httpErr.Code, httpErr.Message)
+		return
+	}
+
+	user, httpErr := privysigner.PrivyCli.GetUser(privyId)
 	if httpErr != nil {
 		c.JSON(httpErr.Code, httpErr.Message)
 		return

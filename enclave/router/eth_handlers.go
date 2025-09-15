@@ -12,9 +12,9 @@ import (
 // Handles the Ethereum secp256k1_sign method. It takes the users userId as a path param and a EthSecp256k1SignResponse as the json body.
 // It fetches the users delegated eth wallet from the privy backend.
 func EthSecp256k1SignTxHandler(c *gin.Context) {
-	privyJwt := c.GetHeader("auth")
+	auth := c.GetHeader("auth")
 
-	if privyJwt == "" {
+	if auth == "" {
 		log.Errorf("Eth transaction secp256k1 sign API error: missing auth")
 		resp := privydata.Message{
 			Message: "Unauthorized user",
@@ -45,28 +45,30 @@ func EthSecp256k1SignTxHandler(c *gin.Context) {
 		return
 	}
 
-	user, httpErr := privysigner.PrivyCli.GetUser(privyJwt)
+	resp, httpErr := privysigner.PrivyCli.EthSecp256k1Sign(&secp256k1Sign, auth)
 	if httpErr != nil {
-		c.JSON(httpErr.Code, httpErr.Message)
-		return
-	}
-
-	ethWallet := user.GetUsersEthDelegatedWallet()
-	if ethWallet == nil || ethWallet.WalletID == "" {
-		log.Errorf("Eth secp256k1 sign API error user %s does not have a delegated eth wallet", user.PrivyID)
-		resp := privydata.Message{
-			Message: "user does not have an delegated eth wallet",
-		}
-		c.JSON(http.StatusBadRequest, resp)
-		return
-	}
-
-	resp, httpErr := privysigner.PrivyCli.EthSecp256k1Sign(&secp256k1Sign, ethWallet.WalletID)
-	if httpErr != nil {
-		log.Errorf("Eth secp256k1 sign API error user %s could not sign tx with err: %v", user.PrivyID, httpErr.Message.Message)
+		log.Errorf("Eth secp256k1 sign API error could not sign tx with err: %v", httpErr.Message.Message)
 		c.JSON(httpErr.Code, httpErr.Message)
 		return
 	}
 
 	c.JSON(http.StatusOK, resp)
 }
+
+// 	user, httpErr := privysigner.PrivyCli.GetUser(privyJwt)
+// 	if httpErr != nil {
+// 		c.JSON(httpErr.Code, httpErr.Message)
+// 		return
+// 	}
+
+// 	ethWallet := user.GetUsersEthDelegatedWallet()
+// 	if ethWallet == nil || ethWallet.WalletID == "" {
+// 		log.Errorf("Eth secp256k1 sign API error user %s does not have a delegated eth wallet", user.PrivyID)
+// 		resp := privydata.Message{
+// 			Message: "user does not have an delegated eth wallet",
+// 		}
+// 		c.JSON(http.StatusBadRequest, resp)
+// 		return
+// 	}
+
+// 	c.JSON(http.StatusOK, resp)

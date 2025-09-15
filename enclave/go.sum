@@ -17,6 +17,12 @@ github.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467/g
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/decred/dcrd/crypto/blake256 v1.0.0 h1:/8DMNYp9SGi5f0w7uCm6d6M4OU2rGFK09Y2A4Xv7EE0=
+github.com/decred/dcrd/crypto/blake256 v1.0.0/go.mod h1:sQl2p6Y26YV+ZOcSTP6thNdn47hh8kt6rqSlvmrXFAc=
+github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 h1:YLtO71vCjJRCBcrPMtQ9nqBsqpA1m5sE92cU+pd5Mcc=
+github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1/go.mod h1:hyedUtir6IdtD/7lIxGeCxkaw7y45JueMRL4DIyJDKs=
+github.com/ethereum/go-ethereum v1.16.3 h1:nDoBSrmsrPbrDIVLTkDQCy1U9KdHN+F2PzvMbDoS42Q=
+github.com/ethereum/go-ethereum v1.16.3/go.mod h1:Lrsc6bt9Gm9RyvhfFK53vboCia8kpF9nv+2Ukntnl+8=
 github.com/fxamacker/cbor/v2 v2.2.0 h1:6eXqdDDe588rSYAi1HfZKbx6YYQO4mxQ9eC6xYpU/JQ=
 github.com/fxamacker/cbor/v2 v2.2.0/go.mod h1:TA1xS00nchWmaBnEIxPSE5oHLuJBAVvqrtAnWBwBCVo=
 github.com/gabriel-vasile/mimetype v1.4.3 h1:in2uUcidCuFcDKtdcBxlR0rJ1+fsokWf+uqxgUFjbI0=
@@ -44,6 +50,8 @@ github.com/hf/nitrite v0.0.0-20241225144000-c2d5d3c4f303 h1:XBSq4rXFUgD8ic6Mr7dB
 github.com/hf/nitrite v0.0.0-20241225144000-c2d5d3c4f303/go.mod h1:ycRhVmo6wegyEl6WN+zXOHUTJvB0J2tiuH88q/McTK8=
 github.com/hf/nsm v0.0.0-20220930140112-cd181bd646b9 h1:pU32bJGmZwF4WXb9Yaz0T8vHDtIPVxqDOdmYdwTQPqw=
 github.com/hf/nsm v0.0.0-20220930140112-cd181bd646b9/go.mod h1:MJsac5D0fKcNWfriUERtln6segcGfD6Nu0V5uGBbPf8=
+github.com/holiman/uint256 v1.3.2 h1:a9EgMPSC1AAaj1SZL5zIQD3WbwTuHrMGOerLjGmM/TA=
+github.com/holiman/uint256 v1.3.2/go.mod h1:EOMSn4q6Nyt9P6efbI3bueV4e1b3dGlUCXeiRV4ng7E=
 github.com/jellydator/ttlcache/v3 v3.4.0 h1:YS4P125qQS0tNhtL6aeYkheEaB/m8HCqdMMP4mnWdTY=
 github.com/jellydator/ttlcache/v3 v3.4.0/go.mod h1:Hw9EgjymziQD3yGsQdf1FqFdpp7YjFMd4Srg5EJlgD4=
 github.com/jinzhu/configor v1.2.2 h1:sLgh6KMzpCmaQB4e+9Fu/29VErtBUqsS2t8C9BNIVsA=

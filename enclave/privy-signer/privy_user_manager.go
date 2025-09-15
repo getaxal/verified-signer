@@ -7,25 +7,13 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/getaxal/verified-signer/enclave/privy-signer/auth"
 	"github.com/getaxal/verified-signer/enclave/privy-signer/data"
 	"github.com/jellydator/ttlcache/v3"
 	log "github.com/sirupsen/logrus"
 )
 
 // Gets a user given a Privy userID. It also checks to see if the user already has a delagted eth wallet, if it does not it will create one for them.
-func (cli *PrivyClient) GetUser(privyToken string) (*data.PrivyUser, *data.HttpError) {
-	privyId, err := auth.ValidateJWTAndExtractUserID(privyToken, cli.privyConfig.JWTVerificationKey, cli.privyConfig.AppID, cli.Environment)
-	if err != nil {
-		log.Errorf("Unable to parse privy token: %v", err)
-		return nil, &data.HttpError{
-			Code: 401,
-			Message: data.Message{
-				Message: "Unauthorized User",
-			},
-		}
-	}
-
+func (cli *PrivyClient) GetUser(privyId string) (*data.PrivyUser, *data.HttpError) {
 	if item := cli.userCache.Get(privyId); item != nil {
 		log.Infof("Cache Hit: %s", privyId)
 		value := item.Value()
@@ -111,7 +99,7 @@ func (cli *PrivyClient) createUserWalletsIfNotExists(user data.PrivyUser, userId
 
 	url := fmt.Sprintf("%s%s", cli.baseUrl, CREATE_WALLET_PATH.Build(userId))
 
-	walletCreateReq := data.NewCreateEthWalletRequest(cli.privyConfig.DelegatedActionsKeyId)
+	walletCreateReq := data.NewCreateEthWalletRequest(cli.teeConfig.Privy.DelegatedActionsKeyId)
 
 	requestBody, err := json.Marshal(walletCreateReq)
 

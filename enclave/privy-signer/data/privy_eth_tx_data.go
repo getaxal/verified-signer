@@ -13,6 +13,7 @@ type EthSecp256k1SignRequest struct {
 	Params struct {
 		Hash string `json:"hash"`
 	} `json:"params"`
+	SigningType string `json:"signing_type"`
 }
 
 // Creates a new Privy secp256k1_sign Request

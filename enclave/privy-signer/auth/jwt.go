@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/getaxal/verified-signer/enclave"
-	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	log "github.com/sirupsen/logrus"
 )
@@ -26,15 +25,9 @@ type PrivyClaims struct {
 	AppId      string `json:"aud,omitempty"`
 	Expiration int64  `json:"exp,omitempty"`
 	Issuer     string `json:"iss,omitempty"`
-	UserId     string `json:"sub,omitempty"`
+	PrivyId    string `json:"sub,omitempty"`
 	IssuedAt   int64  `json:"iat,omitempty"`
 	jwt.RegisteredClaims
-}
-
-// Valid validates the Privy JWT claims
-func (c *PrivyClaims) Valid() error {
-	// We'll validate in the main validation function instead
-	return nil
 }
 
 // validatePrivyClaims validates Privy-specific claims
@@ -52,17 +45,17 @@ func validatePrivyClaims(claims *PrivyClaims, appID, env string) error {
 			return errors.New("token is expired")
 		}
 	}
-	if claims.UserId == "" {
-		return errors.New("token does not contain user subject")
+	if claims.PrivyId == "" {
+		return errors.New("token does not contain user privy id subject")
 	}
-	if !strings.HasPrefix(claims.UserId, "did:privy:") {
-		return fmt.Errorf("invalid user DID format: expected 'did:privy:' prefix, got %s", claims.UserId)
+	if !strings.HasPrefix(claims.PrivyId, "did:privy:") {
+		return fmt.Errorf("invalid user DID format: expected 'did:privy:' prefix, got %s", claims.PrivyId)
 	}
 	return nil
 }
 
-// validateJWTAndExtractUserID validates a Privy JWT token using ES256 and extracts the user ID
-func ValidateJWTAndExtractUserID(tokenString string, teeCfg *enclave.TEEConfig) (string, error) {
+// validateJWTAndExtractUserID validates a Privy JWT token using ES256 and extracts the users privy ID
+func ValidateJWTAndExtractPrivyID(tokenString string, teeCfg *enclave.TEEConfig) (string, error) {
 	if tokenString == "" {
 		return "", fmt.Errorf("token cannot be empty")
 	}
@@ -169,10 +162,5 @@ func ValidateJWTAndExtractUserID(tokenString string, teeCfg *enclave.TEEConfig) 
 		return "", fmt.Errorf("JWT claims are invalid: %w", err)
 	}
 
-	return privyClaim.UserId, nil
-}
-
-// GetPrivyTokenFromGin retrieves the privy token from gin context
-func GetPrivyTokenFromGin(c *gin.Context) string {
-	return c.GetString(string(PrivyTokenKey))
+	return privyClaim.PrivyId, nil
 }

@@ -31,18 +31,12 @@ type PrivyClient struct {
 func InitNewPrivyClient(configPath string, cfg *enclave.TEEConfig) error {
 	// Setup Privy Config for privy api details
 	log.Infof("Setting up privy cfg in %s env", cfg.GetEnv())
-	privyConfig, err := InitPrivyConfig(configPath, cfg.Ports.AWSSecretManagerVsockPort, cfg.Ports.Ec2CredsVsockPort, cfg.GetEnv())
-
-	if err != nil {
-		log.Errorf("Could not fetch Privy config due to err: %v", err)
-		return err
-	}
 
 	// Setup a new Http client for Privy API calls
 	privyClient := network.InitHttpsClientWithTLSVsockTransport(cfg.Ports.PrivyAPIVsockPort, "api.privy.io")
 
-	username := privyConfig.AppID
-	password := privyConfig.AppSecret
+	username := cfg.Privy.AppID
+	password := cfg.Privy.AppSecret
 
 	authorization := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 	cache := ttlcache.New(
