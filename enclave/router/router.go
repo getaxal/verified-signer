@@ -35,7 +35,13 @@ func InitRouter(routerVsockPort uint32) {
 func initRoutes(r *gin.Engine) {
 	v1 := r.Group("/api/v1")
 	{
-		// APIs for privy signing
+		// User routes
+		userGroup := v1.Group("/user")
+		{
+			userGroup.GET("", GetUserHandler)
+		}
+
+		// User signer routes - JWT auth only
 		signerGroup := v1.Group("/signer")
 		{
 			ethGroup := signerGroup.Group("/eth")
@@ -44,9 +50,16 @@ func initRoutes(r *gin.Engine) {
 			}
 		}
 
-		userGroup := v1.Group("/user")
+		// Axal routes - JWT + HMAC auth
+		axalGroup := v1.Group("/axal")
 		{
-			userGroup.GET("", GetUserHandler)
+			axalSignerGroup := axalGroup.Group("/signer")
+			{
+				axalEthGroup := axalSignerGroup.Group("/eth")
+				{
+					axalEthGroup.POST("/secp256k1Sign", AxalEthSecp256k1SignTxHandler)
+				}
+			}
 		}
 
 		//APIs for getting TEE attestation

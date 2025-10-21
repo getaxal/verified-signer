@@ -6,15 +6,15 @@ import (
 )
 
 // Signs a transaction using the eth secp256_k1 method
-func (cli *PrivyClient) EthSecp256k1Sign(signReq *data.EthSecp256k1SignRequest, authString string) (*data.EthSecp256k1SignResponse, *data.HttpError) {
+func (cli *PrivyClient) EthSecp256k1Sign(signReq *data.EthSecp256k1SignRequest, authString, hmacSignature, signingType string) (*data.EthSecp256k1SignResponse, *data.HttpError) {
 	// validate and fetch the privy id if its a user operation
-	privyId, httpErr := cli.ValidateAuthForSigningRequest(authString, signReq)
+	privyId, httpErr := cli.ValidateAuthForSigningRequest(authString, hmacSignature, signingType, signReq)
 	if httpErr != nil {
 		log.Errorf("invalid auth with err: %v", httpErr.Message.Message)
 		return nil, httpErr
 	}
 
-	switch signReq.SigningType {
+	switch signingType {
 	// For user operations we execute a privy signing
 	case "user":
 		var resp data.EthSecp256k1SignResponse
@@ -29,7 +29,7 @@ func (cli *PrivyClient) EthSecp256k1Sign(signReq *data.EthSecp256k1SignRequest, 
 		}
 		return resp, nil
 	default:
-		log.Errorf("invalid signing type: %s", signReq.SigningType)
+		log.Errorf("invalid signing type: %s", signingType)
 		httpErr := &data.HttpError{
 			Code: 401,
 			Message: data.Message{

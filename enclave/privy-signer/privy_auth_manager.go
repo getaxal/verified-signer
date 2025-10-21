@@ -7,13 +7,13 @@ import (
 )
 
 // For signing requests we need to check wether a transaction is a user transaction or a axal transaction. based on which one it is we have different auth processes.
-func (cli *PrivyClient) ValidateAuthForSigningRequest(authString string, signReq *data.EthSecp256k1SignRequest) (string, *data.HttpError) {
-	switch signReq.SigningType {
+func (cli *PrivyClient) ValidateAuthForSigningRequest(authString, hmacSignature, signingType string, signReq *data.EthSecp256k1SignRequest) (string, *data.HttpError) {
+	switch signingType {
 	// For user signing requests we will use privy jwt
 	case "user":
 		privyId, err := auth.ValidateJWTAndExtractPrivyID(authString, cli.teeConfig)
-		log.Errorf("invalid privy jwt: %s with err: %v", authString, err)
 		if err != nil {
+			log.Errorf("invalid privy jwt: %s with err: %v", authString, err)
 			httpErr := &data.HttpError{
 				Code: 401,
 				Message: data.Message{
@@ -24,22 +24,37 @@ func (cli *PrivyClient) ValidateAuthForSigningRequest(authString string, signReq
 		}
 		return privyId, nil
 
-	// For axal signing requests we will use axals hmac signature
+	// For axal signing requests we will use JWT + HMAC signature
 	case "axal":
-		verified := auth.VerifyAxalSignature(signReq.Params.Hash, authString, cli.teeConfig.Axal.AxalRequestSecretKey)
-		if !verified {
+		// First validate JWT
+		privyId, err := auth.ValidateJWTAndExtractPrivyID(authString, cli.teeConfig)
+		if err != nil {
+			log.Errorf("invalid privy jwt: %s with err: %v", authString, err)
 			httpErr := &data.HttpError{
 				Code: 401,
 				Message: data.Message{
-					Message: "Unauthorized User",
+					Message: "Unauthorized User - Invalid JWT",
 				},
 			}
 			return "", httpErr
 		}
 
-		return "", nil
+		// Then validate HMAC signature
+		verified := auth.VerifyAxalSignature(signReq.Params.Hash, hmacSignature, cli.teeConfig.Axal.AxalRequestSecretKey)
+		if !verified {
+			log.Errorf("invalid HMAC signature for payload: %s", signReq.Params.Hash)
+			httpErr := &data.HttpError{
+				Code: 401,
+				Message: data.Message{
+					Message: "Unauthorized User - Invalid HMAC",
+				},
+			}
+			return "", httpErr
+		}
+
+		return privyId, nil
 	default:
-		log.Errorf("invalid signing type: %s", signReq.SigningType)
+		log.Errorf("invalid signing type: %s", signingType)
 		httpErr := &data.HttpError{
 			Code: 401,
 			Message: data.Message{
@@ -65,5 +80,4 @@ func (cli *PrivyClient) ValidateAuthForGetUserRequest(authString string) (string
 	}
 
 	return privyId, nil
-
 }
