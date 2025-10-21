@@ -12,10 +12,10 @@ const (
 func (s SigningType) String() string {
 	switch s {
 	case UserInitiatedSigning:
-		return "User"
+		return "user"
 	case AxalInitiatedSigning:
-		return "Axal"
+		return "axal"
 	default:
-		return "Unknown"
+		return "unknown"
 	}
 }

@@ -5,37 +5,50 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Signs a transaction using the eth secp256_k1 method
-func (cli *PrivyClient) EthSecp256k1Sign(signReq *data.EthSecp256k1SignRequest, authString string, signingType data.SigningType) (*data.EthSecp256k1SignResponse, *data.HttpError) {
-	// validate and fetch the privy id if its a user operation
-	privyId, httpErr := cli.ValidateAuthForSigningRequest(authString, signingType, signReq)
+// User signing - JWT auth only, privy_id extracted from JWT
+func (cli *PrivyClient) UserEthSecp256k1Sign(signReq *data.UserEthSecp256k1SignRequest, authString string) (*data.EthSecp256k1SignResponse, *data.HttpError) {
+	// Validate JWT and get privy_id
+	privyId, httpErr := cli.ValidateUserAuthForSigningRequest(authString)
 	if httpErr != nil {
-		log.Errorf("invalid auth with err: %v", httpErr.Message.Message)
+		log.Errorf("invalid user auth with err: %v", httpErr.Message.Message)
 		return nil, httpErr
 	}
 
-	switch signingType {
-	// For user operations we execute a privy signing
-	case data.UserInitiatedSigning:
-		var resp data.EthSecp256k1SignResponse
-		if err := cli.executePrivySigningRequest(*signReq, privyId, &resp); err != nil {
-			return nil, err
-		}
-		return &resp, nil
-	case data.AxalInitiatedSigning:
-		var resp data.EthSecp256k1SignResponse
-		if err := cli.executePrivySigningRequest(*signReq, privyId, &resp); err != nil {
-			return nil, err
-		}
-		return &resp, nil
-	default:
-		log.Errorf("invalid signing type: %s", signingType)
-		httpErr := &data.HttpError{
-			Code: 401,
-			Message: data.Message{
-				Message: "Unauthorized User",
-			},
-		}
+	// Convert to legacy format for executePrivySigningRequest
+	legacyReq := data.EthSecp256k1SignRequest{
+		Method:      signReq.Method,
+		Params:      signReq.Params,
+		SigningType: data.UserInitiatedSigning.String(),
+	}
+
+	// Execute privy signing
+	var resp data.EthSecp256k1SignResponse
+	if err := cli.executePrivySigningRequest(legacyReq, privyId, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// Axal signing - HMAC auth only, privy_id from request body
+func (cli *PrivyClient) AxalEthSecp256k1Sign(signReq *data.AxalEthSecp256k1SignRequest, hmacSignature string) (*data.EthSecp256k1SignResponse, *data.HttpError) {
+	// Validate HMAC and get privy_id from request
+	privyId, httpErr := cli.ValidateAxalAuthForSigningRequest(hmacSignature, signReq)
+	if httpErr != nil {
+		log.Errorf("invalid axal auth with err: %v", httpErr.Message.Message)
 		return nil, httpErr
 	}
+
+	// Convert to legacy format for executePrivySigningRequest
+	legacyReq := data.EthSecp256k1SignRequest{
+		Method:      signReq.Method,
+		Params:      signReq.Params,
+		SigningType: data.AxalInitiatedSigning.String(),
+	}
+
+	// Execute privy signing
+	var resp data.EthSecp256k1SignResponse
+	if err := cli.executePrivySigningRequest(legacyReq, privyId, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
