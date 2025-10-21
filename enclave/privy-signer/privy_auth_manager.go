@@ -7,10 +7,10 @@ import (
 )
 
 // For signing requests we need to check wether a transaction is a user transaction or a axal transaction. based on which one it is we have different auth processes.
-func (cli *PrivyClient) ValidateAuthForSigningRequest(authString, hmacSignature, signingType string, signReq *data.EthSecp256k1SignRequest) (string, *data.HttpError) {
+func (cli *PrivyClient) ValidateAuthForSigningRequest(authString string, signingType data.SigningType, signReq *data.EthSecp256k1SignRequest) (string, *data.HttpError) {
 	switch signingType {
 	// For user signing requests we will use privy jwt
-	case "user":
+	case data.UserInitiatedSigning:
 		privyId, err := auth.ValidateJWTAndExtractPrivyID(authString, cli.teeConfig)
 		if err != nil {
 			log.Errorf("invalid privy jwt: %s with err: %v", authString, err)
@@ -25,7 +25,7 @@ func (cli *PrivyClient) ValidateAuthForSigningRequest(authString, hmacSignature,
 		return privyId, nil
 
 	// For axal signing requests we will use JWT + HMAC signature
-	case "axal":
+	case data.AxalInitiatedSigning:
 		// First validate JWT
 		privyId, err := auth.ValidateJWTAndExtractPrivyID(authString, cli.teeConfig)
 		if err != nil {
@@ -40,7 +40,7 @@ func (cli *PrivyClient) ValidateAuthForSigningRequest(authString, hmacSignature,
 		}
 
 		// Then validate HMAC signature
-		verified := auth.VerifyAxalSignature(signReq.Params.Hash, hmacSignature, cli.teeConfig.Axal.AxalRequestSecretKey)
+		verified := auth.VerifyAxalSignature(signReq.Params.Hash, authString, cli.teeConfig.Axal.AxalRequestSecretKey)
 		if !verified {
 			log.Errorf("invalid HMAC signature for payload: %s", signReq.Params.Hash)
 			httpErr := &data.HttpError{

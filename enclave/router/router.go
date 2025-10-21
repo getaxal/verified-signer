@@ -35,22 +35,22 @@ func InitRouter(routerVsockPort uint32) {
 func initRoutes(r *gin.Engine) {
 	v1 := r.Group("/api/v1")
 	{
-		// User routes
+		// User routes for user initiated signing
 		userGroup := v1.Group("/user")
 		{
 			userGroup.GET("", GetUserHandler)
-		}
 
-		// User signer routes - JWT auth only
-		signerGroup := v1.Group("/signer")
-		{
-			ethGroup := signerGroup.Group("/eth")
+			signerGroup := v1.Group("/signer")
 			{
-				ethGroup.POST("/secp256k1Sign", EthSecp256k1SignTxHandler)
+				ethGroup := signerGroup.Group("/eth")
+				{
+					ethGroup.POST("/secp256k1Sign", EthSecp256k1SignTxHandler)
+				}
 			}
+
 		}
 
-		// Axal routes - JWT + HMAC auth
+		// Axal routes for axal initiated signing
 		axalGroup := v1.Group("/axal")
 		{
 			axalSignerGroup := axalGroup.Group("/signer")
