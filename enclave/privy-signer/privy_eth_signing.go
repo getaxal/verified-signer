@@ -23,11 +23,11 @@ func (cli *PrivyClient) EthSecp256k1Sign(signReq *data.EthSecp256k1SignRequest, 
 		}
 		return &resp, nil
 	case "axal":
-		resp, err := cli.SignHashAxal(signReq)
-		if err != nil {
+		var resp data.EthSecp256k1SignResponse
+		if err := cli.executePrivySigningRequest(*signReq, privyId, &resp); err != nil {
 			return nil, err
 		}
-		return resp, nil
+		return &resp, nil
 	default:
 		log.Errorf("invalid signing type: %s", signingType)
 		httpErr := &data.HttpError{
