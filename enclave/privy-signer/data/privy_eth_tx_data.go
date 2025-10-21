@@ -25,15 +25,6 @@ type AxalEthSecp256k1SignRequest struct {
 	PrivyID string `json:"privy_id"`
 }
 
-// Legacy struct for backward compatibility
-type EthSecp256k1SignRequest struct {
-	Method string `json:"method"`
-	Params struct {
-		Hash string `json:"hash"`
-	} `json:"params"`
-	SigningType string `json:"signing_type"`
-}
-
 // UserEthSecp256k1SignRequest methods
 func (req *UserEthSecp256k1SignRequest) ValidateTxRequest() error {
 	if req.Method != "secp256k1_sign" {
@@ -67,18 +58,6 @@ func (req *AxalEthSecp256k1SignRequest) GetMethod() string {
 	return req.Method
 }
 
-// Legacy EthSecp256k1SignRequest methods
-func (req *EthSecp256k1SignRequest) ValidateTxRequest() error {
-	if req.Method != "secp256k1_sign" {
-		return fmt.Errorf("incorrect transaction request method")
-	}
-	return nil
-}
-
-func (req *EthSecp256k1SignRequest) GetMethod() string {
-	return req.Method
-}
-
 // Creates a new User secp256k1_sign Request
 func NewUserEthSecp256k1SignRequest(hash string) *UserEthSecp256k1SignRequest {
 	return &UserEthSecp256k1SignRequest{
@@ -101,18 +80,6 @@ func NewAxalEthSecp256k1SignRequest(hash, privyID string) *AxalEthSecp256k1SignR
 			Hash: hash,
 		},
 		PrivyID: privyID,
-	}
-}
-
-// Creates a new Legacy secp256k1_sign Request
-func NewEthSecp256k1SignRequest(hash string) *EthSecp256k1SignRequest {
-	return &EthSecp256k1SignRequest{
-		Method: "secp256k1_sign",
-		Params: struct {
-			Hash string `json:"hash"`
-		}{
-			Hash: hash,
-		},
 	}
 }
 
