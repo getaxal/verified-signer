@@ -10,7 +10,7 @@ import (
 )
 
 // AxalSign recreates the secp256k1_sign method in Privy but with Axals own private key
-func (cli *PrivyClient) SignHashAxal(signReq *data.EthSecp256k1SignRequest) (*data.EthSecp256k1SignResponse, *data.HttpError) {
+func (cli *PrivyClient) SignHashAxal(signReq *data.AxalEthSecp256k1SignRequest) (*data.EthSecp256k1SignResponse, *data.HttpError) {
 	hashHex := signReq.Params.Hash
 	// Remove 0x prefix from inputs if present
 	if len(hashHex) > 2 && hashHex[:2] == "0x" {

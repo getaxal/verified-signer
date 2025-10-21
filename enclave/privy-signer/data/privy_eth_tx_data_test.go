@@ -5,16 +5,16 @@ import (
 	"testing"
 )
 
-func TestNewEthSecp256k1SignRequest(t *testing.T) {
+func TestNewUserEthSecp256k1SignRequest(t *testing.T) {
 	tests := []struct {
 		name string
 		hash string
-		want *EthSecp256k1SignRequest
+		want *UserEthSecp256k1SignRequest
 	}{
 		{
 			name: "valid hash",
 			hash: "0x1234567890abcdef",
-			want: &EthSecp256k1SignRequest{
+			want: &UserEthSecp256k1SignRequest{
 				Method: "secp256k1_sign",
 				Params: struct {
 					Hash string `json:"hash"`
@@ -26,7 +26,7 @@ func TestNewEthSecp256k1SignRequest(t *testing.T) {
 		{
 			name: "empty hash",
 			hash: "",
-			want: &EthSecp256k1SignRequest{
+			want: &UserEthSecp256k1SignRequest{
 				Method: "secp256k1_sign",
 				Params: struct {
 					Hash string `json:"hash"`
@@ -38,7 +38,7 @@ func TestNewEthSecp256k1SignRequest(t *testing.T) {
 		{
 			name: "long hash",
 			hash: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
-			want: &EthSecp256k1SignRequest{
+			want: &UserEthSecp256k1SignRequest{
 				Method: "secp256k1_sign",
 				Params: struct {
 					Hash string `json:"hash"`
@@ -51,27 +51,27 @@ func TestNewEthSecp256k1SignRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := NewEthSecp256k1SignRequest(tt.hash)
+			got := NewUserEthSecp256k1SignRequest(tt.hash)
 			if got.Method != tt.want.Method {
-				t.Errorf("NewEthSecp256k1SignRequest() Method = %v, want %v", got.Method, tt.want.Method)
+				t.Errorf("NewUserEthSecp256k1SignRequest() Method = %v, want %v", got.Method, tt.want.Method)
 			}
 			if got.Params.Hash != tt.want.Params.Hash {
-				t.Errorf("NewEthSecp256k1SignRequest() Hash = %v, want %v", got.Params.Hash, tt.want.Params.Hash)
+				t.Errorf("NewUserEthSecp256k1SignRequest() Hash = %v, want %v", got.Params.Hash, tt.want.Params.Hash)
 			}
 		})
 	}
 }
 
-func TestEthSecp256k1SignRequest_ValidateTxRequest(t *testing.T) {
+func TestUserEthSecp256k1SignRequest_ValidateTxRequest(t *testing.T) {
 	tests := []struct {
 		name    string
-		req     *EthSecp256k1SignRequest
+		req     *UserEthSecp256k1SignRequest
 		wantErr bool
 		errMsg  string
 	}{
 		{
 			name: "valid method",
-			req: &EthSecp256k1SignRequest{
+			req: &UserEthSecp256k1SignRequest{
 				Method: "secp256k1_sign",
 				Params: struct {
 					Hash string `json:"hash"`
@@ -83,7 +83,7 @@ func TestEthSecp256k1SignRequest_ValidateTxRequest(t *testing.T) {
 		},
 		{
 			name: "invalid method",
-			req: &EthSecp256k1SignRequest{
+			req: &UserEthSecp256k1SignRequest{
 				Method: "invalid_method",
 				Params: struct {
 					Hash string `json:"hash"`
@@ -96,7 +96,7 @@ func TestEthSecp256k1SignRequest_ValidateTxRequest(t *testing.T) {
 		},
 		{
 			name: "empty method",
-			req: &EthSecp256k1SignRequest{
+			req: &UserEthSecp256k1SignRequest{
 				Method: "",
 				Params: struct {
 					Hash string `json:"hash"`
@@ -107,6 +107,19 @@ func TestEthSecp256k1SignRequest_ValidateTxRequest(t *testing.T) {
 			wantErr: true,
 			errMsg:  "incorrect transaction request method",
 		},
+		{
+			name: "empty hash",
+			req: &UserEthSecp256k1SignRequest{
+				Method: "secp256k1_sign",
+				Params: struct {
+					Hash string `json:"hash"`
+				}{
+					Hash: "",
+				},
+			},
+			wantErr: true,
+			errMsg:  "hash is required",
+		},
 	}
 
 	for _, tt := range tests {
@@ -114,20 +127,20 @@ func TestEthSecp256k1SignRequest_ValidateTxRequest(t *testing.T) {
 			err := tt.req.ValidateTxRequest()
 			if tt.wantErr {
 				if err == nil {
-					t.Errorf("EthSecp256k1SignRequest.ValidateTxRequest() expected error but got none")
+					t.Errorf("UserEthSecp256k1SignRequest.ValidateTxRequest() expected error but got none")
 				} else if err.Error() != tt.errMsg {
-					t.Errorf("EthSecp256k1SignRequest.ValidateTxRequest() error = %v, want %v", err.Error(), tt.errMsg)
+					t.Errorf("UserEthSecp256k1SignRequest.ValidateTxRequest() error = %v, want %v", err.Error(), tt.errMsg)
 				}
 			} else {
 				if err != nil {
-					t.Errorf("EthSecp256k1SignRequest.ValidateTxRequest() unexpected error = %v", err)
+					t.Errorf("UserEthSecp256k1SignRequest.ValidateTxRequest() unexpected error = %v", err)
 				}
 			}
 		})
 	}
 }
 
-func TestEthSecp256k1SignRequest_GetMethod(t *testing.T) {
+func TestUserEthSecp256k1SignRequest_GetMethod(t *testing.T) {
 	tests := []struct {
 		name   string
 		method string
@@ -152,7 +165,7 @@ func TestEthSecp256k1SignRequest_GetMethod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := &EthSecp256k1SignRequest{
+			req := &UserEthSecp256k1SignRequest{
 				Method: tt.method,
 				Params: struct {
 					Hash string `json:"hash"`
@@ -161,17 +174,17 @@ func TestEthSecp256k1SignRequest_GetMethod(t *testing.T) {
 				},
 			}
 			if got := req.GetMethod(); got != tt.want {
-				t.Errorf("EthSecp256k1SignRequest.GetMethod() = %v, want %v", got, tt.want)
+				t.Errorf("UserEthSecp256k1SignRequest.GetMethod() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestEthSecp256k1SignRequest_Interface(t *testing.T) {
-	// Test that EthSecp256k1SignRequest implements EthTxRequest interface
-	var _ EthTxRequest = (*EthSecp256k1SignRequest)(nil)
+func TestUserEthSecp256k1SignRequest_Interface(t *testing.T) {
+	// Test that UserEthSecp256k1SignRequest implements EthTxRequest interface
+	var _ EthTxRequest = (*UserEthSecp256k1SignRequest)(nil)
 
-	req := NewEthSecp256k1SignRequest("0x1234567890abcdef")
+	req := NewUserEthSecp256k1SignRequest("0x1234567890abcdef")
 
 	// Test interface methods
 	if method := req.GetMethod(); method != "secp256k1_sign" {
@@ -183,8 +196,24 @@ func TestEthSecp256k1SignRequest_Interface(t *testing.T) {
 	}
 }
 
-func TestEthSecp256k1SignRequest_JSONSerialization(t *testing.T) {
-	req := NewEthSecp256k1SignRequest("0x1234567890abcdef")
+func TestAxalEthSecp256k1SignRequest_Interface(t *testing.T) {
+	// Test that AxalEthSecp256k1SignRequest implements EthTxRequest interface
+	var _ EthTxRequest = (*AxalEthSecp256k1SignRequest)(nil)
+
+	req := NewAxalEthSecp256k1SignRequest("0x1234567890abcdef", "did:privy:test123")
+
+	// Test interface methods
+	if method := req.GetMethod(); method != "secp256k1_sign" {
+		t.Errorf("GetMethod() = %v, want secp256k1_sign", method)
+	}
+
+	if err := req.ValidateTxRequest(); err != nil {
+		t.Errorf("ValidateTxRequest() unexpected error = %v", err)
+	}
+}
+
+func TestUserEthSecp256k1SignRequest_JSONSerialization(t *testing.T) {
+	req := NewUserEthSecp256k1SignRequest("0x1234567890abcdef")
 
 	// Test JSON marshaling
 	jsonData, err := json.Marshal(req)
@@ -193,7 +222,7 @@ func TestEthSecp256k1SignRequest_JSONSerialization(t *testing.T) {
 	}
 
 	// Test JSON unmarshaling
-	var unmarshaled EthSecp256k1SignRequest
+	var unmarshaled UserEthSecp256k1SignRequest
 	if err := json.Unmarshal(jsonData, &unmarshaled); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
@@ -220,6 +249,52 @@ func TestEthSecp256k1SignRequest_JSONSerialization(t *testing.T) {
 
 	if actual["method"] != expected["method"] {
 		t.Errorf("JSON method = %v, want %v", actual["method"], expected["method"])
+	}
+}
+
+func TestAxalEthSecp256k1SignRequest_JSONSerialization(t *testing.T) {
+	req := NewAxalEthSecp256k1SignRequest("0x1234567890abcdef", "did:privy:test123")
+
+	// Test JSON marshaling
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	// Test JSON unmarshaling
+	var unmarshaled AxalEthSecp256k1SignRequest
+	if err := json.Unmarshal(jsonData, &unmarshaled); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	// Verify the unmarshaled data
+	if unmarshaled.Method != req.Method {
+		t.Errorf("Unmarshaled Method = %v, want %v", unmarshaled.Method, req.Method)
+	}
+	if unmarshaled.Params.Hash != req.Params.Hash {
+		t.Errorf("Unmarshaled Hash = %v, want %v", unmarshaled.Params.Hash, req.Params.Hash)
+	}
+	if unmarshaled.PrivyID != req.PrivyID {
+		t.Errorf("Unmarshaled PrivyID = %v, want %v", unmarshaled.PrivyID, req.PrivyID)
+	}
+
+	// Test expected JSON structure includes privy_id
+	expectedJSON := `{"method":"secp256k1_sign","params":{"hash":"0x1234567890abcdef"},"privy_id":"did:privy:test123"}`
+	var expected map[string]interface{}
+	var actual map[string]interface{}
+
+	if err := json.Unmarshal([]byte(expectedJSON), &expected); err != nil {
+		t.Fatalf("Failed to unmarshal expected JSON: %v", err)
+	}
+	if err := json.Unmarshal(jsonData, &actual); err != nil {
+		t.Fatalf("Failed to unmarshal actual JSON: %v", err)
+	}
+
+	if actual["method"] != expected["method"] {
+		t.Errorf("JSON method = %v, want %v", actual["method"], expected["method"])
+	}
+	if actual["privy_id"] != expected["privy_id"] {
+		t.Errorf("JSON privy_id = %v, want %v", actual["privy_id"], expected["privy_id"])
 	}
 }
 
