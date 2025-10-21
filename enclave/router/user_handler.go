@@ -21,7 +21,7 @@ func GetUserHandler(c *gin.Context) {
 		return
 	}
 
-	privyId, httpErr := privysigner.PrivyCli.ValidateAuthForGetUserRequest(auth)
+	privyId, httpErr := privysigner.PrivyCli.ValidateUserAuthForSigningRequest(auth)
 	if httpErr != nil {
 		c.JSON(httpErr.Code, httpErr.Message)
 		return

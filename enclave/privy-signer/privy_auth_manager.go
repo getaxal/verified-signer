@@ -40,20 +40,3 @@ func (cli *PrivyClient) ValidateAxalAuthForSigningRequest(hmacSignature string, 
 	// Return privy_id from request body (backend already authenticated the user)
 	return signReq.PrivyID, nil
 }
-
-// For Get User requests, it is always not a axal request but a user request so we simply extract the privy id
-func (cli *PrivyClient) ValidateAuthForGetUserRequest(authString string) (string, *data.HttpError) {
-	privyId, err := auth.ValidateJWTAndExtractPrivyID(authString, cli.teeConfig)
-	log.Errorf("invalid privy jwt: %s with err: %v", authString, err)
-	if err != nil {
-		httpErr := &data.HttpError{
-			Code: 401,
-			Message: data.Message{
-				Message: "Unauthorized User",
-			},
-		}
-		return "", httpErr
-	}
-
-	return privyId, nil
-}
