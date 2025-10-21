@@ -12,7 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var PortsConfig *enclave.PortConfig
+var TeeCfg *enclave.TEEConfig
 
 func main() {
 	log.Info("Initiating enclave for Axal Verified Signer")
@@ -22,25 +22,19 @@ func main() {
 	flag.Parse()
 
 	// Setup network port management config
-	portCfg, err := enclave.LoadPortConfig(*configPath)
+	teeCfg, err := enclave.LoadTEEConfig(*configPath)
 
 	if err != nil {
-		log.Fatalf("Could not fetch Port config due to err: %v", err)
+		log.Fatalf("Could not fetch TEE config due to err: %v", err)
 	}
 
-	PortsConfig = portCfg
+	TeeCfg = teeCfg
 
-	envCfg, err := enclave.LoadEnvConfig(*configPath)
-
-	if err != nil {
-		log.Fatalf("Could not fetch Env config due to err: %v", err)
-	}
-
-	err = privysigner.InitNewPrivyClient(*configPath, PortsConfig, envCfg)
+	err = privysigner.InitNewPrivyClient(*configPath, teeCfg)
 
 	if err != nil {
 		log.Fatalf("Error creating privy cli: %v", err)
 	}
 
-	router.InitRouter(PortsConfig.RouterVsockPort)
+	router.InitRouter(TeeCfg.Ports.RouterVsockPort)
 }

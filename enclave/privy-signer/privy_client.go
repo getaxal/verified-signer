@@ -22,27 +22,21 @@ type PrivyClient struct {
 	Environment   string
 	baseUrl       string
 	client        *http.Client
-	privyConfig   *PrivyConfig
+	teeConfig     *enclave.TEEConfig
 	authorization string
 	userCache     *ttlcache.Cache[string, data.PrivyUser]
 }
 
 // Inits a new Privy Client with a custom Transport Layer service that routes https through the privyAPIVsockPort. It initates it to privysigner.PrivyCli.
-func InitNewPrivyClient(configPath string, portsCfg *enclave.PortConfig, environment *enclave.EnvironmentConfig) error {
+func InitNewPrivyClient(configPath string, cfg *enclave.TEEConfig) error {
 	// Setup Privy Config for privy api details
-	log.Infof("Setting up privy cfg in %s env", environment.GetEnv())
-	privyConfig, err := InitPrivyConfig(configPath, portsCfg.AWSSecretManagerVsockPort, portsCfg.Ec2CredsVsockPort, environment.GetEnv())
-
-	if err != nil {
-		log.Errorf("Could not fetch Privy config due to err: %v", err)
-		return err
-	}
+	log.Infof("Setting up privy cfg in %s env", cfg.GetEnv())
 
 	// Setup a new Http client for Privy API calls
-	privyClient := network.InitHttpsClientWithTLSVsockTransport(portsCfg.PrivyAPIVsockPort, "api.privy.io")
+	privyClient := network.InitHttpsClientWithTLSVsockTransport(cfg.Ports.PrivyAPIVsockPort, "api.privy.io")
 
-	username := privyConfig.AppID
-	password := privyConfig.AppSecret
+	username := cfg.Privy.AppID
+	password := cfg.Privy.AppSecret
 
 	authorization := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 	cache := ttlcache.New(
@@ -51,10 +45,10 @@ func InitNewPrivyClient(configPath string, portsCfg *enclave.PortConfig, environ
 	)
 
 	PrivyCli = &PrivyClient{
-		Environment:   environment.GetEnv(),
+		Environment:   cfg.GetEnv(),
 		baseUrl:       "https://api.privy.io",
 		client:        privyClient,
-		privyConfig:   privyConfig,
+		teeConfig:     cfg,
 		authorization: authorization,
 		userCache:     cache,
 	}
@@ -64,7 +58,7 @@ func InitNewPrivyClient(configPath string, portsCfg *enclave.PortConfig, environ
 
 // Adds the standard API headers for most Privy API calls
 func (cli *PrivyClient) addStandardPrivyHeaders(req *http.Request) {
-	req.Header.Add("privy-app-id", cli.privyConfig.AppID)
+	req.Header.Add("privy-app-id", cli.teeConfig.Privy.AppID)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Basic "+cli.authorization)
 }

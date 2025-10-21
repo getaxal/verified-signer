@@ -40,17 +40,7 @@ func initRoutes(r *gin.Engine) {
 		{
 			ethGroup := signerGroup.Group("/eth")
 			{
-				ethGroup.POST("/ethSignTx", EthTransactionSignTxHandler)
-				ethGroup.POST("/ethSendTx", EthTransactionSendTxHandler)
-				ethGroup.POST("/personalSign", EthPersonalSignTxHandler)
 				ethGroup.POST("/secp256k1Sign", EthSecp256k1SignTxHandler)
-			}
-
-			solGroup := signerGroup.Group("/sol")
-			{
-				solGroup.POST("/solSignTx", SolSignTxHandler)
-				solGroup.POST("/solSendTx", SolSignAndSendTxHandler)
-				solGroup.POST("/signMessage", SolSignMessageTxHandler)
 			}
 		}
 
