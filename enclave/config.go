@@ -30,8 +30,6 @@ type PortConfig struct {
 
 type AxalConfig struct {
 	AxalRequestSecretKey string `yaml:"axal_request_secret_key" json:"axal_request_secret_key"`
-	AxalClaimingWallet   string `yaml:"axal_claiming_wallet" json:"axal_claiming_wallet"`
-	AxalClaimingWalletPK string `yaml:"axal_claiming_wallet_pk" json:"axal_claiming_wallet_pk"`
 }
 
 // Config for privy access
