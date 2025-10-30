@@ -44,7 +44,7 @@ func initRoutes(r *gin.Engine) {
 			{
 				ethGroup := signerGroup.Group("/eth")
 				{
-					ethGroup.POST("/secp256k1Sign", EthSecp256k1SignTxHandler)
+					ethGroup.POST("/secp256k1Sign", UserEthSecp256k1SignTxHandler)
 				}
 			}
 
@@ -58,7 +58,6 @@ func initRoutes(r *gin.Engine) {
 				axalEthGroup := axalSignerGroup.Group("/eth")
 				{
 					axalEthGroup.POST("/secp256k1Sign", AxalEthSecp256k1SignTxHandler)
-					axalEthGroup.POST("/batchSecp256k1Sign", AxalBatchEthSecp256k1SignTxHandler)
 				}
 			}
 		}

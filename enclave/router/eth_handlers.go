@@ -11,7 +11,7 @@ import (
 
 // Handles the Ethereum secp256k1_sign method for users. JWT auth only.
 // It fetches the users delegated eth wallet from the privy backend.
-func EthSecp256k1SignTxHandler(c *gin.Context) {
+func UserEthSecp256k1SignTxHandler(c *gin.Context) {
 	auth := c.GetHeader("auth")
 
 	if auth == "" {
@@ -59,7 +59,7 @@ func EthSecp256k1SignTxHandler(c *gin.Context) {
 // Axal handler - HMAC auth only
 func AxalEthSecp256k1SignTxHandler(c *gin.Context) {
 
-	hmacSignature := c.GetHeader("hmac-signature")
+	hmacSignature := c.GetHeader("auth")
 	if hmacSignature == "" {
 		log.Errorf("Axal eth secp256k1 sign API error: missing hmac signature")
 		resp := data.Message{Message: "Missing HMAC signature"}

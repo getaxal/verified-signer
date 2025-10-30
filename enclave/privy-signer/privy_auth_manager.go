@@ -1,8 +1,6 @@
 package privysigner
 
 import (
-	"strings"
-
 	"github.com/getaxal/verified-signer/enclave/privy-signer/auth"
 	"github.com/getaxal/verified-signer/enclave/privy-signer/data"
 	log "github.com/sirupsen/logrus"
@@ -22,32 +20,6 @@ func (cli *PrivyClient) ValidateUserAuthForSigningRequest(authString string) (st
 		return "", httpErr
 	}
 	return privyId, nil
-}
-
-// For axal batch signing requests - HMAC validation only
-func (cli *PrivyClient) ValidateAxalBatchAuthForSigningRequest(hmacSignature string, batchReq *data.BatchSignRequest) *data.HttpError {
-	// Serialize the batch request to string for HMAC validation
-	// We'll use a simple concatenation of all hashes for HMAC validation
-	var payload strings.Builder
-	for _, req := range batchReq.SigningRequests {
-		payload.WriteString(req.Hash)
-		payload.WriteString(req.PrivyID)
-		payload.WriteString(req.SigningType)
-	}
-
-	// Validate HMAC signature against the payload
-	verified := auth.VerifyAxalSignature(payload.String(), hmacSignature, cli.teeConfig.Axal.AxalRequestSecretKey)
-	if !verified {
-		log.Errorf("invalid HMAC signature for batch payload")
-		return &data.HttpError{
-			Code: 401,
-			Message: data.Message{
-				Message: "Unauthorized User - Invalid HMAC for batch request",
-			},
-		}
-	}
-
-	return nil
 }
 
 // For axal signing requests - HMAC validation only
