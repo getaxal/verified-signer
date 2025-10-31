@@ -62,7 +62,7 @@ sleep 2
 echo "🐳 Step 1: Building Docker image..."
 if ! docker images | grep -q "$DOCKER_IMAGE_NAME.*$DOCKER_TAG"; then
     echo "   Docker image not found, building..."
-    if ! enclave_scripts/./docker_build.sh; then
+    if ! ./docker_build.sh; then
         echo -e "${RED}❌ Docker build failed${NC}"
         exit 1
     fi
