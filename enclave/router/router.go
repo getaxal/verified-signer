@@ -40,7 +40,7 @@ func initRoutes(r *gin.Engine) {
 		{
 			userGroup.GET("", GetUserHandler)
 
-			signerGroup := v1.Group("/signer")
+			signerGroup := userGroup.Group("/signer")
 			{
 				ethGroup := signerGroup.Group("/eth")
 				{
