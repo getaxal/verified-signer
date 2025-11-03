@@ -139,6 +139,8 @@ func LoadTEEConfig(configPath string) (*TEEConfig, error) {
 	config.Privy = *privyConfig
 	log.Info("loaded privy config")
 
+	log.Infof("loaded tee config: %v", config)
+
 	return &config, nil
 }
 
