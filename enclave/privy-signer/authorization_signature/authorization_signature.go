@@ -59,5 +59,7 @@ func GetAuthorizationSignature(body interface{}, methodType string, privyAuthori
 		return "", err
 	}
 
+	log.Infof("auth signature completed: %s", signature)
+
 	return string(signature), nil
 }

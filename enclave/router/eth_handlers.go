@@ -23,6 +23,8 @@ func UserEthSecp256k1SignTxHandler(c *gin.Context) {
 		return
 	}
 
+	log.Infof("auth recieved: %s", auth)
+
 	var secp256k1Sign data.UserEthSecp256k1SignRequest
 	err := c.ShouldBindJSON(&secp256k1Sign)
 
@@ -66,6 +68,8 @@ func AxalEthSecp256k1SignTxHandler(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, resp)
 		return
 	}
+
+	log.Infof("auth recieved: %s", hmacSignature)
 
 	var secp256k1Sign data.AxalEthSecp256k1SignRequest
 	err := c.ShouldBindJSON(&secp256k1Sign)

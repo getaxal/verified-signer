@@ -16,7 +16,7 @@ func (cli *PrivyClient) UserEthSecp256k1Sign(signReq *data.UserEthSecp256k1SignR
 
 	// Execute privy signing directly with user request
 	var resp data.EthSecp256k1SignResponse
-	if err := cli.executePrivySigningRequest(*signReq, privyId, &resp); err != nil {
+	if err := cli.executePrivySigningRequest(signReq.GetPrivyRequest(), privyId, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -33,7 +33,7 @@ func (cli *PrivyClient) AxalEthSecp256k1Sign(signReq *data.AxalEthSecp256k1SignR
 
 	// Execute privy signing directly with axal request
 	var resp data.EthSecp256k1SignResponse
-	if err := cli.executePrivySigningRequest(*signReq, privyId, &resp); err != nil {
+	if err := cli.executePrivySigningRequest(signReq.GetPrivyRequest(), privyId, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
