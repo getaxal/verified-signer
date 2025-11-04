@@ -29,6 +29,7 @@ func GetAuthorizationSignature(body interface{}, methodType string, privyAuthori
 		"privy-app-id": privyAppId,
 	}
 
+	log.Infof("signing auth signature body: %+v, url:%s", body, url)
 	// Make sure its not a pointer
 	bodyValue := enclave.DereferenceIfPointer(body)
 
@@ -39,6 +40,8 @@ func GetAuthorizationSignature(body interface{}, methodType string, privyAuthori
 		"url":     url,
 		"version": 1,
 	})
+
+	log.Infof("payload: %s", string(payload))
 
 	if err != nil {
 		log.Errorf("Error: %v", err)
