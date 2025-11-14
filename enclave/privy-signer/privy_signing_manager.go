@@ -44,7 +44,7 @@ func (cli *PrivyClient) prepSigningTxRequest(body interface{}, walletId string) 
 	cli.addStandardPrivyHeaders(req)
 
 	// Add auth signature header
-	signature, err := authorizationsignature.GetAuthorizationSignature(body, req.Method, cli.privyConfig.DelegatedActionsKey, url, cli.privyConfig.AppID)
+	signature, err := authorizationsignature.GetAuthorizationSignature(body, req.Method, cli.teeConfig.Privy.DelegatedActionsKey, url, cli.teeConfig.Privy.AppID)
 	if err != nil {
 		log.Errorf("Error getting authorization signature: %v", err)
 		return nil, err
@@ -56,8 +56,25 @@ func (cli *PrivyClient) prepSigningTxRequest(body interface{}, walletId string) 
 }
 
 // Generic function to handle HTTP requests and responses for signing requests
-func (cli *PrivyClient) executeSigningRequest(txRequest interface{}, walletId string, response interface{}) *data.HttpError {
-	req, err := cli.prepSigningTxRequest(txRequest, walletId)
+func (cli *PrivyClient) executePrivySigningRequest(txRequest interface{}, privyId string, response interface{}) *data.HttpError {
+	// Fetch the wallet id by fetching user
+	user, httpErr := cli.GetUser(privyId)
+	if httpErr != nil {
+		return httpErr
+	}
+
+	ethWallet := user.GetUsersEthDelegatedWallet()
+	if ethWallet == nil || ethWallet.WalletID == "" {
+		log.Errorf("Eth secp256k1 sign API error user %s does not have a delegated eth wallet", user.PrivyID)
+		return &data.HttpError{
+			Code: http.StatusBadRequest,
+			Message: data.Message{
+				Message: "user does not have an delegated eth wallet",
+			},
+		}
+	}
+
+	req, err := cli.prepSigningTxRequest(txRequest, ethWallet.WalletID)
 	if err != nil {
 		log.Errorf("Error initiating signing request: %v", err)
 		return cli.createInternalServerError()

@@ -2,39 +2,38 @@ package privysigner
 
 import (
 	"github.com/getaxal/verified-signer/enclave/privy-signer/data"
+	log "github.com/sirupsen/logrus"
 )
 
-// Signs a transaction using the eth_signTransaction method
-func (cli *PrivyClient) EthSignTransaction(txRequest *data.EthSignTransactionRequest, walletId string) (*data.EthSignTransactionResponse, *data.HttpError) {
-	var resp data.EthSignTransactionResponse
-	if err := cli.executeSigningRequest(*txRequest, walletId, &resp); err != nil {
-		return nil, err
+// User signing - JWT auth only, privy_id extracted from JWT
+func (cli *PrivyClient) UserEthSecp256k1Sign(signReq *data.UserEthSecp256k1SignRequest, authString string) (*data.EthSecp256k1SignResponse, *data.HttpError) {
+	// Validate JWT and get privy_id
+	privyId, httpErr := cli.ValidateUserAuthForSigningRequest(authString)
+	if httpErr != nil {
+		log.Errorf("invalid user auth with err: %v", httpErr.Message.Message)
+		return nil, httpErr
 	}
-	return &resp, nil
-}
 
-// Signs and sends a transaction using the eth_sendTransaction method
-func (cli *PrivyClient) EthSendTransaction(txRequest *data.EthSendTransactionRequest, walletId string) (*data.EthSendTransactionResponse, *data.HttpError) {
-	var resp data.EthSendTransactionResponse
-	if err := cli.executeSigningRequest(*txRequest, walletId, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
-// Signs a transaction using the eth personal sign method
-func (cli *PrivyClient) EthPersonalSign(txRequest *data.EthPersonalSignRequest, walletId string) (*data.EthPersonalSignResponse, *data.HttpError) {
-	var resp data.EthPersonalSignResponse
-	if err := cli.executeSigningRequest(*txRequest, walletId, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
-// Signs a transaction using the eth secp256_k1 method
-func (cli *PrivyClient) EthSecp256k1Sign(txRequest *data.EthSecp256k1SignRequest, walletId string) (*data.EthSecp256k1SignResponse, *data.HttpError) {
+	// Execute privy signing directly with user request
 	var resp data.EthSecp256k1SignResponse
-	if err := cli.executeSigningRequest(*txRequest, walletId, &resp); err != nil {
+	if err := cli.executePrivySigningRequest(*signReq, privyId, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// Axal signing - HMAC auth only, privy_id from request body
+func (cli *PrivyClient) AxalEthSecp256k1Sign(signReq *data.AxalEthSecp256k1SignRequest, hmacSignature string) (*data.EthSecp256k1SignResponse, *data.HttpError) {
+	// Validate HMAC and get privy_id from request
+	privyId, httpErr := cli.ValidateAxalAuthForSigningRequest(hmacSignature, signReq)
+	if httpErr != nil {
+		log.Errorf("invalid axal auth with err: %v", httpErr.Message.Message)
+		return nil, httpErr
+	}
+
+	// Execute privy signing directly with axal request
+	var resp data.EthSecp256k1SignResponse
+	if err := cli.executePrivySigningRequest(*signReq, privyId, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
