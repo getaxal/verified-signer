@@ -14,9 +14,11 @@ func (cli *PrivyClient) UserEthSecp256k1Sign(signReq *data.UserEthSecp256k1SignR
 		return nil, httpErr
 	}
 
+	privyData := signReq.GetPrivySignData()
+
 	// Execute privy signing directly with user request
 	var resp data.EthSecp256k1SignResponse
-	if err := cli.executePrivySigningRequest(*signReq, privyId, &resp); err != nil {
+	if err := cli.executePrivySigningRequest(privyData, privyId, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -25,15 +27,17 @@ func (cli *PrivyClient) UserEthSecp256k1Sign(signReq *data.UserEthSecp256k1SignR
 // Axal signing - HMAC auth only, privy_id from request body
 func (cli *PrivyClient) AxalEthSecp256k1Sign(signReq *data.AxalEthSecp256k1SignRequest, hmacSignature string) (*data.EthSecp256k1SignResponse, *data.HttpError) {
 	// Validate HMAC and get privy_id from request
-	privyId, httpErr := cli.ValidateAxalAuthForSigningRequest(hmacSignature, signReq)
+	httpErr := cli.ValidateAxalAuthForSigningRequest(hmacSignature, signReq.Params.Hash)
 	if httpErr != nil {
 		log.Errorf("invalid axal auth with err: %v", httpErr.Message.Message)
 		return nil, httpErr
 	}
 
+	privyData := signReq.GetPrivySignData()
+
 	// Execute privy signing directly with axal request
 	var resp data.EthSecp256k1SignResponse
-	if err := cli.executePrivySigningRequest(*signReq, privyId, &resp); err != nil {
+	if err := cli.executePrivySigningRequest(privyData, signReq.PrivyID, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

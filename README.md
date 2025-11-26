@@ -1,4 +1,6 @@
-# verified-signer-service
+# Axal Verified Signer Service
+Axal leverages Trusted Execution Environments (TEEs) to handle yield automations for users while maintaining self-custody. More information available on the [docs site](https://docs.axal.com).
+
 This is a service that handles the signatures for transactions on behalf of users using privy's delegated signing (session keys).
 In order to ensure that we do not maliciously sign transactions and our strategies follow a set of user-defined rules, we verify every signature request with a TEE. This way, we can manage the users money without committing any malicious signatures. The enclave repository will be open sourced.
 
