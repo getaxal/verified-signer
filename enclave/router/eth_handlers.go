@@ -84,11 +84,7 @@ func AxalEthSecp256k1SignTxHandler(c *gin.Context) {
 		return
 	}
 
-	// Axal handler - privy_id comes from request body, HMAC auth only
-	// Create a UserEthSecp256k1SignRequest which doesn't have privy_id to send to the signing service
-	userReq := data.NewUserEthSecp256k1SignRequest(secp256k1Sign.Params.Hash)
-
-	resp, httpErr := privysigner.PrivyCli.AxalEthSecp256k1Sign(userReq, secp256k1Sign.PrivyID, hmacSignature)
+	resp, httpErr := privysigner.PrivyCli.AxalEthSecp256k1Sign(&secp256k1Sign, hmacSignature)
 	if httpErr != nil {
 		log.Errorf("Axal eth secp256k1 sign API error: %v", httpErr.Message.Message)
 		c.JSON(httpErr.Code, httpErr.Message)
