@@ -35,7 +35,7 @@ func Attest(nonce, userData, publicKey []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	if "" != res.Error {
+	if res.Error != "" {
 		log.Errorf("Error with attestation doc: %s", string(res.Error))
 		return nil, errors.New(string(res.Error))
 	}
