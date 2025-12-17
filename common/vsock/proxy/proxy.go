@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/getaxal/verified-signer/common/vsock"
 
@@ -53,8 +54,22 @@ func NewProxy(context context.Context, localPort, remoteCid, remotePort uint32) 
 	for {
 		conn, err := local.Accept()
 		if err != nil {
-			log.Errorf("NewProxy Accept failed,localPort %d error: %s", localPort, err.Error())
-			return
+			// Check if this is a temporary/recoverable error
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				log.Warnf("NewProxy Accept temporary error, retrying: %s", err)
+				time.Sleep(100 * time.Millisecond) // Brief backoff
+				continue
+			}
+			// Check for closed listener (intentional shutdown)
+			if errors.Is(err, net.ErrClosed) {
+				log.Infof("NewProxy listener closed, exiting")
+				return
+			}
+			// For other errors, log and continue with backoff
+			log.Errorf("NewProxy Accept error, retrying: %s", err)
+			time.Sleep(time.Second) // Longer backoff for unknown errors
+			continue
 		}
 		//log.Printf("conn Accept,local:%s,remote :%s", local.Addr().String(), conn.RemoteAddr().String())
 		go handle(context, conn, remoteCid, remotePort)
