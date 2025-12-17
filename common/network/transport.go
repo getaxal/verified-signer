@@ -181,18 +181,6 @@ func (v *VsockHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 		conn.SetDeadline(deadline)
 	}
 
-	// Unblock to prevent resource exhaustion
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		select {
-		case <-ctx.Done():
-			conn.Close() // Unblocks any pending Read/Write
-		case <-done:
-			// RoundTrip completed normally
-		}
-	}()
-
 	// Send HTTP request
 	if err := req.Write(conn); err != nil {
 		log.Errorf("Failed to write request: %v", err)
