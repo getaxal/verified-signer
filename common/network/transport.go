@@ -176,7 +176,12 @@ func (v *VsockHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 		return nil, err
 	}
 
-	// Send HTTP request 
+	// Set deadline
+	if deadline, ok := ctx.Deadline(); ok {
+		conn.SetDeadline(deadline)
+	}
+
+	// Send HTTP request
 	if err := req.Write(conn); err != nil {
 		log.Errorf("Failed to write request: %v", err)
 		conn.Close()
@@ -191,7 +196,7 @@ func (v *VsockHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	// CRITICAL FIX: Wrap the response body to handle connection cleanup
+	// Wrap the response body to handle connection cleanup
 	// Don't close the connection here - let the response body handle it
 	resp.Body = &httpConnectionAwareBody{
 		ReadCloser: resp.Body,
