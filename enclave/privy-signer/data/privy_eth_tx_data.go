@@ -6,6 +6,15 @@ import "fmt"
 type EthTxRequest interface {
 	ValidateTxRequest() error
 	GetMethod() string
+	GetPrivySignData() PrivySigningData
+}
+
+// This is the signing data sent to privy in the eth_sign method
+type PrivySigningData struct {
+	Method string `json:"method"`
+	Params struct {
+		Hash string `json:"hash"`
+	} `json:"params"`
 }
 
 // User-initiated signing request (JWT auth only, no privy_id in request)
@@ -40,6 +49,13 @@ func (req *UserEthSecp256k1SignRequest) GetMethod() string {
 	return req.Method
 }
 
+func (req *UserEthSecp256k1SignRequest) GetPrivySignData() PrivySigningData {
+	return PrivySigningData{
+		Method: req.Method,
+		Params: req.Params,
+	}
+}
+
 // AxalEthSecp256k1SignRequest methods
 func (req *AxalEthSecp256k1SignRequest) ValidateTxRequest() error {
 	if req.Method != "secp256k1_sign" {
@@ -56,6 +72,13 @@ func (req *AxalEthSecp256k1SignRequest) ValidateTxRequest() error {
 
 func (req *AxalEthSecp256k1SignRequest) GetMethod() string {
 	return req.Method
+}
+
+func (req *AxalEthSecp256k1SignRequest) GetPrivySignData() PrivySigningData {
+	return PrivySigningData{
+		Method: req.Method,
+		Params: req.Params,
+	}
 }
 
 // Creates a new User secp256k1_sign Request
