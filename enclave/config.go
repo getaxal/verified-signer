@@ -129,6 +129,14 @@ func LoadTEEConfig(configPath string) (*TEEConfig, error) {
 		log.Info("loaded axal wallets config from sm")
 	}
 
+	// Fail-closed guard: an empty AxalRequestSecretKey turns the HMAC check
+	// in VerifyAxalSignature into a public function (HMAC with key="" is
+	// reproducible by any caller). Refuse to start the enclave rather than
+	// silently authorize forged signing requests.
+	if config.Axal.AxalRequestSecretKey == "" {
+		return nil, fmt.Errorf("axal_request_secret_key is empty after config load (env=%s); refusing to start", config.Environment)
+	}
+
 	log.Info("loading privy config")
 	privyConfig, err := InitPrivyConfig(configPath, config)
 
