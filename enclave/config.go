@@ -26,6 +26,7 @@ type PortConfig struct {
 	PrivyAPIVsockPort         uint32 `yaml:"privy_api_vsock_port"`
 	RouterVsockPort           uint32 `yaml:"router_vsock_port"`
 	Ec2CredsVsockPort         uint32 `yaml:"ec2_creds_vsock_port"`
+	KMSVsockPort              uint32 `yaml:"kms_vsock_port"`
 }
 
 type AxalConfig struct {
@@ -74,8 +75,17 @@ func InitPrivyConfig(configPath string, teeConfig TEEConfig) (*PrivyConfig, erro
 		return nil, fmt.Errorf("secret does not contain string data")
 	}
 
+	// In prod/dev/staging the stored value is a base64 KMS ciphertext that can
+	// only be opened via an attestation-bound kms:Decrypt inside the enclave,
+	// so the parent host cannot recover it even though it proxies the call and
+	// holds the same instance-role credentials.
+	plaintext, err := MaybeUnwrap(teeConfig.Environment, secretResponse.SecretString, sm.Config.Region.String(), teeConfig.Ports.KMSVsockPort, sm.Config.Credentials)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unwrap privy secret: %w", err)
+	}
+
 	var config PrivyConfig
-	err = json.Unmarshal([]byte(secretResponse.SecretString), &config)
+	err = json.Unmarshal(plaintext, &config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse secret as PrivyConfig: %w", err)
 	}
@@ -107,6 +117,10 @@ func LoadTEEConfig(configPath string) (*TEEConfig, error) {
 	}
 
 	if config.Environment != "local" {
+
+		if config.Ports.KMSVsockPort == 0 {
+			return nil, fmt.Errorf("no kms_vsock_port loaded from: %s", configPath)
+		}
 
 		log.Info("loading axal wallets config from sm")
 		if config.Region == "" {
@@ -173,15 +187,22 @@ func LoadCfgFromSM[T any](cfg *TEEConfig, client secretmanager.SecretManager, se
 
 	log.Infof("Fetched Secret from secrets manager with secret name : %s", secretName)
 
+	// Like the privy secret, non-local secrets are stored as a base64 KMS
+	// ciphertext and unwrapped via attestation-bound kms:Decrypt in the enclave.
+	plaintext, err := MaybeUnwrap(cfg.Environment, secret.SecretString, client.Config.Region.String(), cfg.Ports.KMSVsockPort, client.Config.Credentials)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unwrap %s secret: %w", secretType, err)
+	}
+
 	// Try normal unmarshal first
-	if err := json.Unmarshal([]byte(secret.SecretString), &configData); err != nil {
+	if err := json.Unmarshal(plaintext, &configData); err != nil {
 		// If it's a string-to-int conversion error, try to fix it
 		if strings.Contains(err.Error(), "cannot unmarshal string into Go struct field") &&
 			strings.Contains(err.Error(), "of type int") {
 
 			// Unmarshal into a map first to manipulate the data
 			var rawData map[string]interface{}
-			if err := json.Unmarshal([]byte(secret.SecretString), &rawData); err != nil {
+			if err := json.Unmarshal(plaintext, &rawData); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal %s config from secrets manager: %w", secretType, err)
 			}
 

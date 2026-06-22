@@ -27,6 +27,7 @@ ports:
   privy_api_vsock_port: 8002
   router_vsock_port: 8003
   ec2_creds_vsock_port: 8004
+  kms_vsock_port: 8005
 `,
 			filename: "valid_config.yaml",
 			wantErr:  false,
@@ -37,6 +38,7 @@ ports:
 					PrivyAPIVsockPort:         8002,
 					RouterVsockPort:           8003,
 					Ec2CredsVsockPort:         8004,
+					KMSVsockPort:              8005,
 				},
 			},
 		},
@@ -49,6 +51,7 @@ ports:
   privy_api_vsock_port: 9002
   router_vsock_port: 9003
   ec2_creds_vsock_port: 9004
+  kms_vsock_port: 9005
 `,
 			filename: "dev_config.yaml",
 			wantErr:  false,
@@ -59,6 +62,7 @@ ports:
 					PrivyAPIVsockPort:         9002,
 					RouterVsockPort:           9003,
 					Ec2CredsVsockPort:         9004,
+					KMSVsockPort:              9005,
 				},
 			},
 		},
