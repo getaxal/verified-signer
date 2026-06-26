@@ -12,10 +12,55 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// userFetchResult carries both the user and the structured HttpError through the
+// singleflight.Group, since singleflight.Do only exposes a plain error channel.
+type userFetchResult struct {
+	user    *data.PrivyUser
+	httpErr *data.HttpError
+}
+
 // Gets a user given a Privy userID. It also checks to see if the user already has a delagted eth wallet, if it does not it will create one for them.
+//
+// Concurrent first-time calls for the same privyId are collapsed via a per-privyId
+// singleflight group: they share ONE GET and AT MOST ONE create-wallet POST. This
+// closes the check-then-create TOCTOU window where two callers both missed the
+// cache, both saw a wallet-less user, and both POSTed -> two Privy wallets.
 func (cli *PrivyClient) GetUser(privyId string) (*data.PrivyUser, *data.HttpError) {
+	// Fast path: serve straight from cache without entering the single-flight group.
 	if item := cli.userCache.Get(privyId); item != nil {
 		log.Infof("Cache Hit: %s", privyId)
+		value := item.Value()
+		return &value, nil
+	}
+
+	// Cache miss: only one goroutine per privyId runs fetchAndCacheUser; the rest
+	// block and receive the same shared result.
+	res, _, _ := cli.userFetchGroup.Do(privyId, func() (interface{}, error) {
+		user, httpErr := cli.fetchAndCacheUser(privyId)
+		return userFetchResult{user: user, httpErr: httpErr}, nil
+	})
+
+	result := res.(userFetchResult)
+	if result.httpErr != nil {
+		return nil, result.httpErr
+	}
+
+	// Hand each collapsed caller its own *PrivyUser rather than the single shared
+	// pointer from fetchAndCacheUser. This matches the cache fast-path semantics
+	// (which returns &value, a per-caller copy) so a downstream mutation can never
+	// race across the N goroutines that collapsed onto this single flight.
+	user := *result.user
+	return &user, nil
+}
+
+// fetchAndCacheUser performs the actual GET + create-wallet-if-needed + cache fill.
+// It runs inside the singleflight critical section for a given privyId.
+func (cli *PrivyClient) fetchAndCacheUser(privyId string) (*data.PrivyUser, *data.HttpError) {
+	// Re-check the cache inside the critical section: a concurrent winner that
+	// finished just before us may already have populated it. singleflight only
+	// dedups overlapping calls, not strictly sequential ones.
+	if item := cli.userCache.Get(privyId); item != nil {
+		log.Infof("Cache Hit (in-flight): %s", privyId)
 		value := item.Value()
 		return &value, nil
 	}
