@@ -74,7 +74,11 @@ func (cli *PrivyClient) executePrivySigningRequest(txRequest interface{}, privyI
 		}
 	}
 
-	req, err := cli.prepSigningTxRequest(txRequest, ethWallet.WalletID)
+	return cli.executePrivySigningRequestForWallet(txRequest, ethWallet.WalletID, response)
+}
+
+func (cli *PrivyClient) executePrivySigningRequestForWallet(txRequest interface{}, walletID string, response interface{}) *data.HttpError {
+	req, err := cli.prepSigningTxRequest(txRequest, walletID)
 	if err != nil {
 		log.Errorf("Error initiating signing request: %v", err)
 		return cli.createInternalServerError()

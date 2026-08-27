@@ -1,6 +1,9 @@
 package privysigner
 
 import (
+	"net/http"
+	"strings"
+
 	"github.com/getaxal/verified-signer/enclave/privy-signer/data"
 	log "github.com/sirupsen/logrus"
 )
@@ -19,6 +22,33 @@ func (cli *PrivyClient) UserEthSecp256k1Sign(signReq *data.UserEthSecp256k1SignR
 	// Execute privy signing directly with user request
 	var resp data.EthSecp256k1SignResponse
 	if err := cli.executePrivySigningRequest(privyData, privyId, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// AxalEthPersonalSign signs a validated Crossmint ownership challenge with the
+// user's delegated EVM wallet. The address check prevents a valid backend HMAC
+// from accidentally signing a challenge for a different wallet.
+func (cli *PrivyClient) AxalEthPersonalSign(signReq *data.AxalEthPersonalSignRequest, hmacSignature string) (*data.PersonalSignResponse, *data.HttpError) {
+	if httpErr := cli.ValidateAxalPersonalSignAuth(hmacSignature, signReq); httpErr != nil {
+		return nil, httpErr
+	}
+
+	user, httpErr := cli.GetUser(signReq.PrivyID)
+	if httpErr != nil {
+		return nil, httpErr
+	}
+	wallet := user.GetUsersEthDelegatedWallet()
+	if wallet == nil || wallet.WalletID == "" || !strings.EqualFold(wallet.Address, signReq.WalletAddress) {
+		return nil, &data.HttpError{
+			Code:    http.StatusBadRequest,
+			Message: data.Message{Message: "requested wallet is not the user's delegated EVM wallet"},
+		}
+	}
+
+	var resp data.PersonalSignResponse
+	if err := cli.executePrivySigningRequestForWallet(signReq.GetPrivySignData(), wallet.WalletID, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

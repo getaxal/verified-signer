@@ -32,18 +32,20 @@ The Transaction Verifier implements safety checks and validates transactions aga
 - **GET** `/api/v1/health/ping` - Health check endpoint for service availability
 
 ### User Management
-- **GET** `/api/v1/user/:userId` - Retrieve user information and configuration
+- **GET** `/api/v1/user` - Retrieve the authenticated Privy user
 
 ### Ethereum Signing
-- **POST** `/api/v1/signer/eth/ethSignTx/:userId` - Sign Ethereum transactions
-- **POST** `/api/v1/signer/eth/ethSendTx/:userId` - Sign and send Ethereum transactions
-- **POST** `/api/v1/signer/eth/personalSign/:userId` - Ethereum personal message signing
-- **POST** `/api/v1/signer/eth/secp256k1Sign/:userId` - SECP256K1 signature generation
+- **POST** `/api/v1/user/signer/eth/secp256k1Sign` - User-authenticated raw-hash signature generation
+- **POST** `/api/v1/axal/signer/eth/secp256k1Sign` - HMAC-authenticated Axal raw-hash signature generation
+- **POST** `/api/v1/axal/signer/eth/personalSign` - HMAC-authenticated Crossmint wallet-ownership signing
 
-### Solana Signing
-- **POST** `/api/v1/signer/sol/solSignTx/:userId` - Sign Solana transactions
-- **POST** `/api/v1/signer/sol/solSendTx/:userId` - Sign and send Solana transactions
-- **POST** `/api/v1/signer/sol/signMessage/:userId` - Solana message signing
+The Axal `personalSign` route is intentionally not a general-purpose signing
+primitive. It accepts only UTF-8 Crossmint CAIP-122 ownership challenges for
+Base or Base Sepolia, checks the challenge address against the requested
+address, verifies that address is the Privy user's delegated EVM wallet, and
+rejects expired challenges. The HMAC covers the method, purpose, encoding,
+wallet, SHA-256 message digest, and Privy ID. Challenges and signatures are not
+logged.
 
 ### Attestation
 - **GET** `/api/v1/attest/bytes/:nonce` - Get attestation bytes for verification
@@ -107,4 +109,3 @@ The enclave provides cryptographic attestation capabilities through the `/api/v1
 - Cryptographic operations use secure, audited libraries
 - Regular security audits and penetration testing
 - Open-source enclave code for transparency and verification
-

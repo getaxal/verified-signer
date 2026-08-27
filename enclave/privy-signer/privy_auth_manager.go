@@ -39,3 +39,13 @@ func (cli *PrivyClient) ValidateAxalAuthForSigningRequest(hmacSignature, hash, p
 	// No need to return privy_id as it is already validated in the request body and backend
 	return nil
 }
+
+func (cli *PrivyClient) ValidateAxalPersonalSignAuth(hmacSignature string, req *data.AxalEthPersonalSignRequest) *data.HttpError {
+	if !auth.VerifyAxalSignature(req.AuthPayload(), hmacSignature, cli.teeConfig.Axal.AxalRequestSecretKey) {
+		return &data.HttpError{
+			Code:    401,
+			Message: data.Message{Message: "Unauthorized User - Invalid HMAC"},
+		}
+	}
+	return nil
+}
