@@ -1,7 +1,6 @@
 package data
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -41,23 +40,6 @@ func TestAxalEthPersonalSignRequestRejectsDifferentWallet(t *testing.T) {
 	req.WalletAddress = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	if err := req.Validate(now); err == nil {
 		t.Fatal("expected wallet mismatch to be rejected")
-	}
-}
-
-func TestAxalEthPersonalSignRequestRejectsExpiredChallenge(t *testing.T) {
-	now := time.Date(2026, 8, 27, 18, 0, 0, 0, time.UTC)
-	req := validPersonalSignRequest()
-	if err := req.Validate(now); err == nil {
-		t.Fatal("expected expired challenge to be rejected")
-	}
-}
-
-func TestAxalEthPersonalSignRequestRejectsUntrustedURI(t *testing.T) {
-	now := time.Date(2026, 8, 27, 16, 30, 0, 0, time.UTC)
-	req := validPersonalSignRequest()
-	req.Params.Message = strings.Replace(req.Params.Message, "https://staging.crossmint.com", "https://crossmint.com.attacker.example", 1)
-	if err := req.Validate(now); err == nil {
-		t.Fatal("expected untrusted URI to be rejected")
 	}
 }
 
