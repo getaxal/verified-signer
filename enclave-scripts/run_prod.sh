@@ -3,6 +3,9 @@
 # Production Nitro Enclave deployment script
 # Usage: ./run_prod.sh
 
+# Resolve this script's directory so sibling scripts are found from any cwd.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Variables
 DOCKER_IMAGE_NAME="verified-signer"
 DOCKER_TAG="latest"
@@ -56,7 +59,7 @@ echo "   ✅ Cleanup completed"
 echo ""
 echo "🐳 Step 2: Fresh Docker build..."
 echo "   Building Docker image from scratch..."
-if ! ./enclave-scripts/docker_build_prod.sh; then
+if ! "$SCRIPT_DIR/docker_build_prod.sh"; then
     echo -e "${RED}❌ Production Docker build failed${NC}"
     exit 1
 fi
