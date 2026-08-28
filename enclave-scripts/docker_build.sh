@@ -3,6 +3,11 @@
 # Docker build script for Nitro Enclave
 # Usage: ./docker_build.sh
 
+# Resolve the repo root so this script works from any directory. The Dockerfile
+# lives at the repo root and COPYs both common/ and enclave/, so the repo root
+# must be the build context.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 # Variables
 DOCKER_IMAGE_NAME="verified-signer"
 DOCKER_TAG="latest"
@@ -50,7 +55,7 @@ echo "" | tee -a "$BUILD_LOG"
 # Enable Docker BuildKit and build with SSH
 export DOCKER_BUILDKIT=1
 
-if docker build -t "$DOCKER_IMAGE_NAME:$DOCKER_TAG" . 2>&1 | tee -a "$BUILD_LOG"; then
+if docker build -f "$REPO_ROOT/Dockerfile" -t "$DOCKER_IMAGE_NAME:$DOCKER_TAG" "$REPO_ROOT" 2>&1 | tee -a "$BUILD_LOG"; then
     echo "" | tee -a "$BUILD_LOG"
     echo -e "${GREEN}✅ Docker image built successfully!${NC}" | tee -a "$BUILD_LOG"
     echo "   📦 Image: $DOCKER_IMAGE_NAME:$DOCKER_TAG" | tee -a "$BUILD_LOG"

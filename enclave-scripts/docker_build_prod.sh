@@ -3,6 +3,11 @@
 # Production Docker build script - Always rebuilds from scratch
 # Usage: ./docker_build_prod.sh
 
+# Resolve the repo root so this script works from any directory. The Dockerfile
+# lives at the repo root and COPYs both common/ and enclave/, so the repo root
+# must be the build context.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 # Variables
 DOCKER_IMAGE_NAME="verified-signer"
 DOCKER_TAG="latest"
@@ -64,8 +69,9 @@ export DOCKER_BUILDKIT=1
 
 if docker build \
     --no-cache \
+    -f "$REPO_ROOT/Dockerfile" \
     -t "$DOCKER_IMAGE_NAME:$DOCKER_TAG" \
-    . 2>&1 | tee -a "$BUILD_LOG"; then
+    "$REPO_ROOT" 2>&1 | tee -a "$BUILD_LOG"; then
     
     echo "" | tee -a "$BUILD_LOG"
     echo -e "${GREEN}✅ Production Docker build completed successfully!${NC}" | tee -a "$BUILD_LOG"
