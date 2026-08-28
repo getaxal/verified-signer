@@ -50,7 +50,7 @@ require (
 	github.com/hf/nsm v0.0.0-20220930140112-cd181bd646b9
 	github.com/jinzhu/configor v1.2.2
 	golang.org/x/net v0.40.0 // indirect
-	golang.org/x/sync v0.15.0 // indirect
+	golang.org/x/sync v0.15.0
 	golang.org/x/sys v0.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
