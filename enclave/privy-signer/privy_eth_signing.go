@@ -27,9 +27,9 @@ func (cli *PrivyClient) UserEthSecp256k1Sign(signReq *data.UserEthSecp256k1SignR
 	return &resp, nil
 }
 
-// AxalEthPersonalSign signs a validated Crossmint ownership challenge with the
-// user's delegated EVM wallet. The address check prevents a valid backend HMAC
-// from accidentally signing a challenge for a different wallet.
+// AxalEthPersonalSign signs a validated personal message with the user's
+// delegated EVM wallet. The address check prevents a valid backend HMAC from
+// accidentally signing with a different wallet.
 func (cli *PrivyClient) AxalEthPersonalSign(signReq *data.AxalEthPersonalSignRequest, hmacSignature string) (*data.PersonalSignResponse, *data.HttpError) {
 	if httpErr := cli.ValidateAxalPersonalSignAuth(hmacSignature, signReq); httpErr != nil {
 		return nil, httpErr
