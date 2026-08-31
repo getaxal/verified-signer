@@ -2,7 +2,6 @@ package router
 
 import (
 	"net/http"
-	"time"
 
 	privysigner "github.com/getaxal/verified-signer/enclave/privy-signer"
 	"github.com/getaxal/verified-signer/enclave/privy-signer/data"
@@ -57,9 +56,9 @@ func UserEthSecp256k1SignTxHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// AxalEthPersonalSignHandler signs only validated Crossmint wallet-ownership
-// challenges. Authentication is backend-to-enclave HMAC; no user JWT or client
-// signing capability is accepted on this route.
+// AxalEthPersonalSignHandler signs a validated personal message with a user's
+// delegated EVM wallet. Authentication is backend-to-enclave HMAC; no user JWT
+// or client signing capability is accepted on this route.
 func AxalEthPersonalSignHandler(c *gin.Context) {
 	hmacSignature := c.GetHeader("auth")
 	if hmacSignature == "" {
@@ -73,7 +72,7 @@ func AxalEthPersonalSignHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, data.Message{Message: "signing data is invalid"})
 		return
 	}
-	if err := signRequest.Validate(time.Now().UTC()); err != nil {
+	if err := signRequest.Validate(); err != nil {
 		log.Errorf("Axal personal sign API validation failed: %v", err)
 		c.JSON(http.StatusBadRequest, data.Message{Message: "signing data is invalid"})
 		return

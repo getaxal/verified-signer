@@ -37,15 +37,15 @@ The Transaction Verifier implements safety checks and validates transactions aga
 ### Ethereum Signing
 - **POST** `/api/v1/user/signer/eth/secp256k1Sign` - User-authenticated raw-hash signature generation
 - **POST** `/api/v1/axal/signer/eth/secp256k1Sign` - HMAC-authenticated Axal raw-hash signature generation
-- **POST** `/api/v1/axal/signer/eth/personalSign` - HMAC-authenticated Crossmint wallet-ownership signing
+- **POST** `/api/v1/axal/signer/eth/personalSign` - HMAC-authenticated EIP-191 personal message signing
 
-The Axal `personalSign` route is intentionally not a general-purpose signing
-primitive. It accepts only UTF-8 Crossmint CAIP-122 ownership challenges for
-Base or Base Sepolia, checks the challenge address against the requested
-address, verifies that address is the Privy user's delegated EVM wallet, and
-rejects expired challenges. The HMAC covers the method, purpose, encoding,
-wallet, SHA-256 message digest, and Privy ID. Challenges and signatures are not
-logged.
+The Axal `personalSign` route is provider-neutral. It accepts the `utf-8` and
+`hex` encodings supported by Privy, requires a provider-independent purpose,
+and verifies that the requested address is the Privy user's delegated EVM
+wallet. The HMAC covers the method, purpose, encoding, wallet, SHA-256 message
+digest, and Privy ID. Raw messages and signatures are not logged. Callers are
+responsible for applying any use-case-specific message or challenge validation
+before requesting a signature.
 
 ### Attestation
 - **GET** `/api/v1/attest/bytes/:nonce` - Get attestation bytes for verification
