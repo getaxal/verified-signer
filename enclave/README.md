@@ -114,6 +114,29 @@ messages and signatures are not logged. Callers are responsible for applying
 any use-case-specific message or challenge validation before requesting a
 signature.
 
+#### Caching
+
+User records are cached for **2 hours** and the signing path resolves wallet addresses out
+of that record, so one cache holds both the user and their wallets — address, HD index,
+Privy wallet id, delegation and external id.
+
+Two properties keep the longer TTL honest:
+
+- **Creation writes the record back, it does not evict it.** Provisioning a wallet folds
+  the create response into the cached user before returning `200`, so a caller that
+  provisions a wallet and immediately signs with it finds the wallet already there. The
+  merge works on a copy: `GetUser` hands back a shallow copy whose `LinkedAccounts` slice
+  still shares a backing array with the cached entry, so merging in place would mutate the
+  cache underneath other readers.
+- **Reads do not extend the TTL.** `ttlcache` refreshes an item on every read unless
+  disabled. Left on, the users who sign most would be the ones whose record is never
+  re-read from Privy, and the TTL would quietly mean forever.
+
+Note that delegation state is cached with everything else, so revoking a wallet's
+delegation can take up to the TTL to be reflected here. That is a staleness window, not an
+authorization hole: Privy enforces the signer quorum at RPC time, so a revoked wallet is
+refused there regardless of what the enclave believes.
+
 ### Attestation
 - **GET** `/api/v1/attest/bytes/:nonce` - Get attestation bytes for verification
 - **GET** `/api/v1/attest/doc/:nonce` - Get attestation document for integrity proof

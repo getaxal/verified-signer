@@ -31,6 +31,7 @@ const (
 type walletProvisioningServer struct {
 	mu          sync.Mutex
 	created     []data.LinkedAccount
+	getCount    int64
 	postCount   int64
 	idemKeys    []string
 	externalIDs []string
@@ -71,6 +72,7 @@ func newWalletProvisioningClient(t *testing.T, getDelay time.Duration) (*PrivyCl
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/users/"):
+			atomic.AddInt64(&state.getCount, 1)
 			if getDelay > 0 {
 				time.Sleep(getDelay)
 			}
@@ -115,8 +117,9 @@ func newWalletProvisioningClient(t *testing.T, getDelay time.Duration) (*PrivyCl
 	t.Cleanup(server.Close)
 
 	cache := ttlcache.New(
-		ttlcache.WithTTL[string, data.PrivyUser](30*time.Minute),
-		ttlcache.WithCapacity[string, data.PrivyUser](1000),
+		ttlcache.WithTTL[string, data.PrivyUser](userCacheTTL),
+		ttlcache.WithCapacity[string, data.PrivyUser](cacheCapacity),
+		ttlcache.WithDisableTouchOnHit[string, data.PrivyUser](),
 	)
 
 	cli := &PrivyClient{

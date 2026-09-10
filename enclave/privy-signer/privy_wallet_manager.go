@@ -103,13 +103,28 @@ func (cli *PrivyClient) createWalletForPurpose(privyId string, externalID string
 		return nil, cli.createInternalServerError()
 	}
 
-	// The signing path resolves addresses against the cached user, so leaving a
-	// pre-creation snapshot in place would make this wallet unusable until the TTL
-	// expired — and because the enclave never falls back to another wallet, that surfaces
-	// as a hard rejection rather than a wrong signature.
-	cli.InvalidateUser(privyId)
+	// Make the cache consistent with Privy before returning, not after.
+	//
+	// The signing path resolves addresses out of this record, so a caller that provisions a
+	// wallet and immediately signs with it must find it there. Evicting instead would work
+	// too, but it would leave the very next signature to race a refetch; writing the record
+	// back means the wallet is usable the moment this call returns 200.
+	cli.cacheUser(privyId, mergedUser(user, createResp.LinkedAccounts))
 
 	return wallet, nil
+}
+
+// Returns a copy of the user with the create-wallet response folded in.
+//
+// The copy is not optional. GetUser hands back a shallow copy whose LinkedAccounts slice
+// still shares its backing array with the cached entry, so merging in place would reach
+// through and mutate the cache underneath other readers.
+func mergedUser(user *data.PrivyUser, accounts []*data.LinkedAccount) *data.PrivyUser {
+	updated := *user
+	updated.LinkedAccounts = append([]data.LinkedAccount(nil), user.LinkedAccounts...)
+	mergeLinkedAccounts(&updated, accounts)
+
+	return &updated
 }
 
 // Picks the newly created wallet out of a create-wallet response.

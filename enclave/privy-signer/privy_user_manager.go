@@ -128,9 +128,17 @@ func (cli *PrivyClient) fetchAndCacheUser(privyId string) (*data.PrivyUser, *dat
 		return nil, httpErr
 	}
 
-	cli.userCache.Set(privyId, *userWithWallet, ttlcache.DefaultTTL)
+	cli.cacheUser(privyId, userWithWallet)
 
 	return userWithWallet, nil
+}
+
+// Writes a user record into the cache.
+//
+// The signing path resolves wallet addresses out of this record, so whatever is stored
+// here is what the enclave believes a user's wallets to be until it expires.
+func (cli *PrivyClient) cacheUser(privyId string, user *data.PrivyUser) {
+	cli.userCache.Set(privyId, *user, ttlcache.DefaultTTL)
 }
 
 // Checks to see if a user has a delegated eth wallet, if the user does not it will create one for them
@@ -267,12 +275,7 @@ func mergeLinkedAccounts(user *data.PrivyUser, accounts []*data.LinkedAccount) {
 	}
 }
 
-// Drops a user's cached record.
-//
-// Anything that changes a user's wallet set at Privy must call this. Without it the
-// signing path keeps resolving addresses against a pre-change snapshot for the rest of
-// the cache TTL and rejects a wallet that genuinely exists — and because the enclave
-// never falls back to another wallet, that surfaces as a hard failure on the happy path.
+// Drops a user's cached record, forcing the next read to come from Privy.
 func (cli *PrivyClient) InvalidateUser(privyId string) {
 	cli.userCache.Delete(privyId)
 }

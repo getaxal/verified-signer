@@ -19,6 +19,16 @@ import (
 
 var PrivyCli *PrivyClient
 
+const (
+	// How long a user record is served without asking Privy again. The signing path
+	// resolves wallets out of this record, and the create path writes the record back when
+	// it changes, so this is bounded by how stale the rest of the record may safely get --
+	// linked emails, accepted terms, MFA -- rather than by the wallet set.
+	userCacheTTL = 2 * time.Hour
+
+	cacheCapacity = 1000
+)
+
 type PrivyClient struct {
 	Environment   string
 	baseUrl       string
@@ -47,8 +57,13 @@ func InitNewPrivyClient(configPath string, cfg *enclave.TEEConfig) error {
 
 	authorization := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 	cache := ttlcache.New(
-		ttlcache.WithTTL[string, data.PrivyUser](30*time.Minute),
-		ttlcache.WithCapacity[string, data.PrivyUser](1000),
+		ttlcache.WithTTL[string, data.PrivyUser](userCacheTTL),
+		ttlcache.WithCapacity[string, data.PrivyUser](cacheCapacity),
+		// ttlcache extends an item's life on every read unless told not to. Left on, a user
+		// who keeps signing would never have their record re-read from Privy and the TTL
+		// above would quietly mean forever, which is exactly the case where staleness costs
+		// the most.
+		ttlcache.WithDisableTouchOnHit[string, data.PrivyUser](),
 	)
 
 	PrivyCli = &PrivyClient{
