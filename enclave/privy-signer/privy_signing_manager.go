@@ -55,26 +55,44 @@ func (cli *PrivyClient) prepSigningTxRequest(body interface{}, walletId string) 
 	return req, nil
 }
 
-// Generic function to handle HTTP requests and responses for signing requests
-func (cli *PrivyClient) executePrivySigningRequest(txRequest interface{}, privyId string, response interface{}) *data.HttpError {
-	// Fetch the wallet id by fetching user
+// Resolves the wallet a signing request names and verifies it belongs to the user the
+// request authenticated as.
+//
+// The enclave never infers a signer. A user may hold several delegated eth wallets, so
+// an address that is not one of theirs is rejected rather than served by a different
+// wallet: a signature from the wrong key produces a user operation that fails validation
+// on chain, which is far more expensive to diagnose than a 4xx. This is also the
+// ownership check, and it is why requests name a wallet by address rather than by index
+// or by Privy wallet id, neither of which we can verify against the user.
+func (cli *PrivyClient) resolveDelegatedWallet(privyId string, walletAddress string) (*data.LinkedAccount, *data.HttpError) {
 	user, httpErr := cli.GetUser(privyId)
 	if httpErr != nil {
-		return httpErr
+		return nil, httpErr
 	}
 
-	ethWallet := user.GetUsersEthDelegatedWallet()
-	if ethWallet == nil || ethWallet.WalletID == "" {
-		log.Errorf("Eth secp256k1 sign API error user %s does not have a delegated eth wallet", user.PrivyID)
-		return &data.HttpError{
+	wallet := user.GetEthDelegatedWalletByAddress(walletAddress)
+	if wallet == nil || wallet.WalletID == "" {
+		log.Errorf("Signing API error: requested wallet is not a delegated eth wallet of user %s", privyId)
+		return nil, &data.HttpError{
 			Code: http.StatusBadRequest,
 			Message: data.Message{
-				Message: "user does not have an delegated eth wallet",
+				Message: "requested wallet is not a delegated eth wallet for this user",
 			},
 		}
 	}
 
-	return cli.executePrivySigningRequestForWallet(txRequest, ethWallet.WalletID, response)
+	return wallet, nil
+}
+
+// Generic function to handle HTTP requests and responses for signing requests. The
+// wallet is named by the caller and verified against the user before anything is signed.
+func (cli *PrivyClient) executePrivySigningRequest(txRequest interface{}, privyId string, walletAddress string, response interface{}) *data.HttpError {
+	wallet, httpErr := cli.resolveDelegatedWallet(privyId, walletAddress)
+	if httpErr != nil {
+		return httpErr
+	}
+
+	return cli.executePrivySigningRequestForWallet(txRequest, wallet.WalletID, response)
 }
 
 func (cli *PrivyClient) executePrivySigningRequestForWallet(txRequest interface{}, walletID string, response interface{}) *data.HttpError {

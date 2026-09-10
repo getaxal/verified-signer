@@ -29,6 +29,9 @@ type PrivyClient struct {
 	// userFetchGroup serializes and collapses concurrent first-time GetUser calls
 	// per privyId so that they share a single GET + at most one create-wallet POST.
 	userFetchGroup singleflight.Group
+	// walletCreateGroup does the same for purpose-built wallets, keyed by external id.
+	// Two concurrent requests for the same user and purpose must not become two wallets.
+	walletCreateGroup singleflight.Group
 }
 
 // Inits a new Privy Client with a custom Transport Layer service that routes https through the privyAPIVsockPort. It initates it to privysigner.PrivyCli.
