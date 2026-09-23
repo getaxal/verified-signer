@@ -128,9 +128,17 @@ func (cli *PrivyClient) fetchAndCacheUser(privyId string) (*data.PrivyUser, *dat
 		return nil, httpErr
 	}
 
-	cli.userCache.Set(privyId, *userWithWallet, ttlcache.DefaultTTL)
+	cli.cacheUser(privyId, userWithWallet)
 
 	return userWithWallet, nil
+}
+
+// Writes a user record into the cache.
+//
+// The signing path resolves wallet addresses out of this record, so whatever is stored
+// here is what the enclave believes a user's wallets to be until it expires.
+func (cli *PrivyClient) cacheUser(privyId string, user *data.PrivyUser) {
+	cli.userCache.Set(privyId, *user, ttlcache.DefaultTTL)
 }
 
 // Checks to see if a user has a delegated eth wallet, if the user does not it will create one for them
@@ -215,18 +223,59 @@ func (cli *PrivyClient) createUserWalletsIfNotExists(user data.PrivyUser, userId
 		}
 	}
 
-	// We check the response for the delegated eth wallet and then we add it to the user
-	for _, linkedAcc := range createWalletResp.LinkedAccounts {
-		if linkedAcc.Delegated && linkedAcc.ChainType == "ethereum" {
-			user.LinkedAccounts = append(user.LinkedAccounts, *linkedAcc)
-			return &user, nil
+	// Keep every account the response carries, not just the first delegated eth wallet: a
+	// user may hold several wallets and callers select between them by address, so
+	// dropping the rest here would make them unsignable.
+	mergeLinkedAccounts(&user, createWalletResp.LinkedAccounts)
+
+	// Assert delegation actually took rather than trusting the Privy default. A wallet
+	// created without our signer attached would serve user-initiated signing and fail
+	// every Axal-initiated one, silently, at a time nobody is watching.
+	if user.GetUsersEthDelegatedWallet() == nil {
+		log.Errorf("created wallet for user %s did not come back delegated", userId)
+		return nil, &data.HttpError{
+			Code: 500,
+			Message: data.Message{
+				Message: "Internal Server Error",
+			},
 		}
 	}
 
-	return nil, &data.HttpError{
-		Code: 500,
-		Message: data.Message{
-			Message: "Internal Server Error",
-		},
+	return &user, nil
+}
+
+// Folds the linked accounts from a create-wallet response into the user, keyed by wallet
+// id.
+//
+// Privy may echo the user's full account set rather than only the wallet just created, so
+// a plain append would duplicate wallets we already hold. Matching on wallet id keeps the
+// merge idempotent and lets an existing entry be refreshed in place.
+func mergeLinkedAccounts(user *data.PrivyUser, accounts []*data.LinkedAccount) {
+	positions := make(map[string]int, len(user.LinkedAccounts))
+	for i, acc := range user.LinkedAccounts {
+		if acc.WalletID != "" {
+			positions[acc.WalletID] = i
+		}
 	}
+
+	for _, acc := range accounts {
+		if acc == nil {
+			continue
+		}
+
+		if i, seen := positions[acc.WalletID]; seen && acc.WalletID != "" {
+			user.LinkedAccounts[i] = *acc
+			continue
+		}
+
+		user.LinkedAccounts = append(user.LinkedAccounts, *acc)
+		if acc.WalletID != "" {
+			positions[acc.WalletID] = len(user.LinkedAccounts) - 1
+		}
+	}
+}
+
+// Drops a user's cached record, forcing the next read to come from Privy.
+func (cli *PrivyClient) InvalidateUser(privyId string) {
+	cli.userCache.Delete(privyId)
 }

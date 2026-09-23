@@ -3,6 +3,7 @@ package data
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,16 +20,17 @@ type LinkedAccount struct {
 	Address string `json:"address,omitempty"`
 
 	// Wallet-specific fields
-	WalletIndex      int    `json:"wallet_index,omitempty"`
+	WalletIndex      int    `json:"wallet_index"`
 	ChainID          string `json:"chain_id,omitempty"`
 	ChainType        string `json:"chain_type,omitempty"`
-	Delegated        bool   `json:"delegated,omitempty"`
+	Delegated        bool   `json:"delegated"`
 	WalletClient     string `json:"wallet_client,omitempty"`
 	WalletClientType string `json:"wallet_client_type,omitempty"`
 	ConnectorType    string `json:"connector_type,omitempty"`
 	Imported         bool   `json:"imported,omitempty"`
 	RecoveryMethod   string `json:"recovery_method,omitempty"`
 	PublicKey        string `json:"public_key,omitempty"`
+	ExternalID       string `json:"external_id,omitempty"`
 }
 
 // PrivyUser represents the main user object from Privy API
@@ -45,6 +47,47 @@ type PrivyUser struct {
 func (pu *PrivyUser) GetUsersEthDelegatedWallet() *LinkedAccount {
 	for _, acc := range pu.LinkedAccounts {
 		if acc.Delegated && acc.ChainType == "ethereum" {
+			return &acc
+		}
+	}
+
+	return nil
+}
+
+// Fetches the users delegated eth wallet at a specific address, or nil if the user does
+// not hold one. Address comparison is case insensitive.
+//
+// A user may hold several delegated eth wallets, so signing requests name the one they
+// want and we resolve it here. The delegated/chain_type filter is load bearing rather
+// than defensive: LinkedAccount.Address carries email addresses as well as wallet
+// addresses, so matching on the address alone would let a non wallet account satisfy
+// the lookup.
+func (pu *PrivyUser) GetEthDelegatedWalletByAddress(address string) *LinkedAccount {
+	if address == "" {
+		return nil
+	}
+
+	for _, acc := range pu.LinkedAccounts {
+		if acc.Delegated && acc.ChainType == "ethereum" && strings.EqualFold(acc.Address, address) {
+			return &acc
+		}
+	}
+
+	return nil
+}
+
+// Fetches the users delegated eth wallet carrying a given Privy external id, or nil.
+//
+// This is how a purpose-built wallet is recognised on a repeat provisioning request, so
+// that asking twice returns the wallet the user already has instead of minting a second
+// one they could split funds across.
+func (pu *PrivyUser) GetEthDelegatedWalletByExternalID(externalID string) *LinkedAccount {
+	if externalID == "" {
+		return nil
+	}
+
+	for _, acc := range pu.LinkedAccounts {
+		if acc.Delegated && acc.ChainType == "ethereum" && acc.ExternalID == externalID {
 			return &acc
 		}
 	}
@@ -111,6 +154,7 @@ type CreateWalletData struct {
 	ChainType         string              `json:"chain_type"` // ethereum, solana, etc.
 	CreateSmartWallet bool                `json:"create_smart_wallet,omitempty"`
 	AdditionalSigners []*AdditionalSigner `json:"additional_signers,omitempty"`
+	ExternalID        string              `json:"external_id,omitempty"`
 }
 
 // AdditionalSigner represents additional signers for wallet creation
@@ -120,6 +164,16 @@ type AdditionalSigner struct {
 }
 
 func NewCreateEthWalletRequest(delegatedSignerId string) *CreateWalletRequest {
+	return NewCreateEthWalletRequestWithExternalID(delegatedSignerId, "")
+}
+
+// Creates an eth wallet create request carrying a Privy external id.
+//
+// The external id is what makes a purpose-built wallet addressable and findable later. It
+// is also our outermost duplicate guard: Privy documents external ids as unique per app,
+// so a second create under the same id collides there rather than quietly producing a
+// second funded address.
+func NewCreateEthWalletRequestWithExternalID(delegatedSignerId string, externalID string) *CreateWalletRequest {
 	return &CreateWalletRequest{
 		PrivyWalletCreateRequestWallets: []*CreateWalletData{
 			{
@@ -129,6 +183,7 @@ func NewCreateEthWalletRequest(delegatedSignerId string) *CreateWalletRequest {
 						SignerID: delegatedSignerId,
 					},
 				},
+				ExternalID: externalID,
 			},
 		},
 	}

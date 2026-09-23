@@ -5,6 +5,10 @@ import (
 	"testing"
 )
 
+// A wallet address is required on every signing request, so the shared fixtures below
+// carry one.
+const testWalletAddr = "0xabcdef0123456789abcdef0123456789abcdef01"
+
 func TestNewUserEthSecp256k1SignRequest(t *testing.T) {
 	tests := []struct {
 		name string
@@ -51,7 +55,7 @@ func TestNewUserEthSecp256k1SignRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := NewUserEthSecp256k1SignRequest(tt.hash)
+			got := NewUserEthSecp256k1SignRequest(tt.hash, testWalletAddr)
 			if got.Method != tt.want.Method {
 				t.Errorf("NewUserEthSecp256k1SignRequest() Method = %v, want %v", got.Method, tt.want.Method)
 			}
@@ -78,8 +82,36 @@ func TestUserEthSecp256k1SignRequest_ValidateTxRequest(t *testing.T) {
 				}{
 					Hash: "0x1234",
 				},
+				WalletAddress: testWalletAddr,
 			},
 			wantErr: false,
+		},
+		{
+			name: "missing wallet address",
+			req: &UserEthSecp256k1SignRequest{
+				Method: "secp256k1_sign",
+				Params: struct {
+					Hash string `json:"hash"`
+				}{
+					Hash: "0x1234",
+				},
+			},
+			wantErr: true,
+			errMsg:  "wallet_address is not a valid EVM address",
+		},
+		{
+			name: "malformed wallet address",
+			req: &UserEthSecp256k1SignRequest{
+				Method: "secp256k1_sign",
+				Params: struct {
+					Hash string `json:"hash"`
+				}{
+					Hash: "0x1234",
+				},
+				WalletAddress: "0xnothex",
+			},
+			wantErr: true,
+			errMsg:  "wallet_address is not a valid EVM address",
 		},
 		{
 			name: "invalid method",
@@ -184,7 +216,7 @@ func TestUserEthSecp256k1SignRequest_Interface(t *testing.T) {
 	// Test that UserEthSecp256k1SignRequest implements EthTxRequest interface
 	var _ EthTxRequest = (*UserEthSecp256k1SignRequest)(nil)
 
-	req := NewUserEthSecp256k1SignRequest("0x1234567890abcdef")
+	req := NewUserEthSecp256k1SignRequest("0x1234567890abcdef", testWalletAddr)
 
 	// Test interface methods
 	if method := req.GetMethod(); method != "secp256k1_sign" {
@@ -200,7 +232,7 @@ func TestAxalEthSecp256k1SignRequest_Interface(t *testing.T) {
 	// Test that AxalEthSecp256k1SignRequest implements EthTxRequest interface
 	var _ EthTxRequest = (*AxalEthSecp256k1SignRequest)(nil)
 
-	req := NewAxalEthSecp256k1SignRequest("0x1234567890abcdef", "did:privy:test123")
+	req := NewAxalEthSecp256k1SignRequest("0x1234567890abcdef", "did:privy:test123", testWalletAddr)
 
 	// Test interface methods
 	if method := req.GetMethod(); method != "secp256k1_sign" {
@@ -213,7 +245,7 @@ func TestAxalEthSecp256k1SignRequest_Interface(t *testing.T) {
 }
 
 func TestUserEthSecp256k1SignRequest_JSONSerialization(t *testing.T) {
-	req := NewUserEthSecp256k1SignRequest("0x1234567890abcdef")
+	req := NewUserEthSecp256k1SignRequest("0x1234567890abcdef", testWalletAddr)
 
 	// Test JSON marshaling
 	jsonData, err := json.Marshal(req)
@@ -253,7 +285,7 @@ func TestUserEthSecp256k1SignRequest_JSONSerialization(t *testing.T) {
 }
 
 func TestAxalEthSecp256k1SignRequest_JSONSerialization(t *testing.T) {
-	req := NewAxalEthSecp256k1SignRequest("0x1234567890abcdef", "did:privy:test123")
+	req := NewAxalEthSecp256k1SignRequest("0x1234567890abcdef", "did:privy:test123", testWalletAddr)
 
 	// Test JSON marshaling
 	jsonData, err := json.Marshal(req)

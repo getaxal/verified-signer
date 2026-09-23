@@ -39,6 +39,7 @@ func initRoutes(r *gin.Engine) {
 		userGroup := v1.Group("/user")
 		{
 			userGroup.GET("", GetUserHandler)
+			userGroup.POST("/wallet", CreateUserWalletHandler)
 
 			signerGroup := userGroup.Group("/signer")
 			{
