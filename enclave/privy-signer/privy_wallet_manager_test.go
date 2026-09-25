@@ -29,28 +29,55 @@ const (
 // wallet is visible to later GETs, and every POST to /wallets mints a NEW wallet. Privy
 // does not suppress duplicates for us, so any suppression has to come from our side.
 type walletProvisioningServer struct {
-	mu          sync.Mutex
-	created     []data.LinkedAccount
-	getCount    int64
-	postCount   int64
-	idemKeys    []string
-	externalIDs []string
+	mu           sync.Mutex
+	created      []data.LinkedAccount
+	getCount     int64
+	postCount    int64
+	lookupCount  int64
+	idemKeys     []string
+	externalIDs  []string
+	seenIdemKeys map[string]bool
+
+	// Mirrors a Privy that does not echo our external id back inside linked_accounts, and
+	// that replays an earlier response when it sees an idempotency key again. Neither is
+	// something the happy-path mock can express, and together they are what the enclave met
+	// in production. Set before the first request.
+	suppressExternalID bool
+	replayIdempotency  bool
 }
 
 func (s *walletProvisioningServer) linkedAccounts() []data.LinkedAccount {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	return s.linkedAccountsLocked()
+}
+
+// The account set as Privy would render it, which is not the same as the set the mock
+// holds: `created` keeps every external id so a lookup by external id can still resolve,
+// while the rendered copy hides it when the mock is standing in for a Privy that does not
+// echo it.
+func (s *walletProvisioningServer) linkedAccountsLocked() []data.LinkedAccount {
 	accounts := []data.LinkedAccount{{
 		WalletID: "w0", Type: "wallet", Address: walletZeroAddr,
 		ChainType: "ethereum", Delegated: true, WalletIndex: 0,
 	}}
-	return append(accounts, s.created...)
+
+	for _, acc := range s.created {
+		if s.suppressExternalID {
+			acc.ExternalID = ""
+		}
+		accounts = append(accounts, acc)
+	}
+
+	return accounts
 }
 
 // Mints a new wallet unconditionally, mirroring Privy's create-next behaviour.
 func (s *walletProvisioningServer) mint(externalID string) []data.LinkedAccount {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	n := len(s.created) + 1
 	s.created = append(s.created, data.LinkedAccount{
 		WalletID:  fmt.Sprintf("w%d", n),
@@ -59,15 +86,53 @@ func (s *walletProvisioningServer) mint(externalID string) []data.LinkedAccount 
 		ChainType: "ethereum", Delegated: true, WalletIndex: n,
 		ExternalID: externalID,
 	})
-	s.mu.Unlock()
 
-	return s.linkedAccounts()
+	return s.linkedAccountsLocked()
+}
+
+// Records an idempotency key and reports whether it has been seen before, which is what
+// decides between minting a wallet and replaying the earlier response.
+func (s *walletProvisioningServer) recordCreate(idemKey string, externalID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.idemKeys = append(s.idemKeys, idemKey)
+	s.externalIDs = append(s.externalIDs, externalID)
+
+	seen := s.seenIdemKeys[idemKey]
+	s.seenIdemKeys[idemKey] = true
+
+	return seen && s.replayIdempotency
+}
+
+// Resolves Privy's ext_wal_<external id> wallet reference, or nil when no wallet carries it.
+func (s *walletProvisioningServer) walletByRef(ref string) *data.PrivyWallet {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, acc := range s.created {
+		if acc.ExternalID == "" || data.ExternalWalletRef(acc.ExternalID) != ref {
+			continue
+		}
+
+		return &data.PrivyWallet{
+			ID:         acc.WalletID,
+			Address:    acc.Address,
+			ChainType:  acc.ChainType,
+			ExternalID: acc.ExternalID,
+			AdditionalSigners: []*data.AdditionalSigner{
+				{SignerID: "test-signer-id"},
+			},
+		}
+	}
+
+	return nil
 }
 
 func newWalletProvisioningClient(t *testing.T, getDelay time.Duration) (*PrivyClient, *walletProvisioningServer) {
 	t.Helper()
 
-	state := &walletProvisioningServer{}
+	state := &walletProvisioningServer{seenIdemKeys: map[string]bool{}}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -83,6 +148,20 @@ func newWalletProvisioningClient(t *testing.T, getDelay time.Duration) (*PrivyCl
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(b)
 
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/wallets/"):
+			atomic.AddInt64(&state.lookupCount, 1)
+
+			wallet := state.walletByRef(strings.TrimPrefix(r.URL.Path, "/v1/wallets/"))
+			if wallet == nil {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"wallet not found"}`))
+				return
+			}
+
+			b, _ := json.Marshal(wallet)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(b)
+
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/wallets"):
 			atomic.AddInt64(&state.postCount, 1)
 
@@ -94,12 +173,12 @@ func newWalletProvisioningClient(t *testing.T, getDelay time.Duration) (*PrivyCl
 				externalID = body.PrivyWalletCreateRequestWallets[0].ExternalID
 			}
 
-			state.mu.Lock()
-			state.idemKeys = append(state.idemKeys, r.Header.Get("privy-idempotency-key"))
-			state.externalIDs = append(state.externalIDs, externalID)
-			state.mu.Unlock()
-
-			accounts := state.mint(externalID)
+			// A repeated idempotency key replays rather than mints, so the response carries
+			// no wallet the caller has not already seen.
+			accounts := state.linkedAccounts()
+			if !state.recordCreate(r.Header.Get("privy-idempotency-key"), externalID) {
+				accounts = state.mint(externalID)
+			}
 			resp := data.CreateWalletResponse{ID: "created"}
 			for i := range accounts {
 				resp.LinkedAccounts = append(resp.LinkedAccounts, &accounts[i])
@@ -281,5 +360,69 @@ func TestCreateUserWallet_RejectsBadPurpose(t *testing.T) {
 
 	if got := atomic.LoadInt64(&state.postCount); got != 0 {
 		t.Errorf("create-wallet POSTs = %d, want 0", got)
+	}
+}
+
+// A create that returns 200 without naming the new wallet must not fail: Privy has created
+// it, and the enclave has to find out which wallet it is rather than report a failure the
+// caller cannot retry away.
+//
+// This is the production failure. With external ids absent from linked_accounts, the first
+// create succeeds but every later call for the same purpose reads a user it cannot
+// recognise the wallet on, then gets back an idempotent replay carrying only wallets it
+// already knew — so the wallet exists, is funded, and is unreachable, for as long as the
+// idempotency record lives.
+func TestCreateUserWallet_RecoversWhenExternalIDIsNotEchoed(t *testing.T) {
+	cli, state := newWalletProvisioningClient(t, 0)
+	state.suppressExternalID = true
+	state.replayIdempotency = true
+
+	first, httpErr := cli.CreateUserWallet(walletTestPrivyID, wealthPurpose)
+	if httpErr != nil {
+		t.Fatalf("first CreateUserWallet() error = %+v", httpErr)
+	}
+
+	second, httpErr := cli.CreateUserWallet(walletTestPrivyID, wealthPurpose)
+	if httpErr != nil {
+		t.Fatalf("second CreateUserWallet() error = %+v, want the wallet the first call created", httpErr)
+	}
+
+	if first.Address != second.Address {
+		t.Errorf("addresses differ across calls: %s then %s", first.Address, second.Address)
+	}
+
+	state.mu.Lock()
+	createdWallets := len(state.created)
+	state.mu.Unlock()
+
+	if createdWallets != 1 {
+		t.Errorf("wallets minted = %d, want 1", createdWallets)
+	}
+}
+
+// The wallet a lookup by external id resolves to still has to be usable for signing, which
+// is resolved out of the user record by address.
+func TestCreateUserWallet_ExternalIDLookupReturnsASignableWallet(t *testing.T) {
+	cli, state := newWalletProvisioningClient(t, 0)
+	state.suppressExternalID = true
+	state.replayIdempotency = true
+
+	if _, httpErr := cli.CreateUserWallet(walletTestPrivyID, wealthPurpose); httpErr != nil {
+		t.Fatalf("CreateUserWallet() error = %+v", httpErr)
+	}
+
+	wallet, httpErr := cli.CreateUserWallet(walletTestPrivyID, wealthPurpose)
+	if httpErr != nil {
+		t.Fatalf("second CreateUserWallet() error = %+v", httpErr)
+	}
+
+	if !wallet.Delegated {
+		t.Error("wallet resolved by external id is not delegated, so Axal cannot sign with it")
+	}
+	if wallet.WalletIndex == 0 {
+		t.Error("wallet resolved by external id lost its HD index")
+	}
+	if _, httpErr := cli.resolveDelegatedWallet(walletTestPrivyID, wallet.Address); httpErr != nil {
+		t.Errorf("wallet resolved by external id is not signable: %+v", httpErr)
 	}
 }
