@@ -50,6 +50,13 @@ func (s *resolveServer) setAccounts(accounts []data.LinkedAccount) {
 	s.accounts = accounts
 }
 
+func (s *resolveServer) setWallet(wallet *data.PrivyWallet) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.wallet = wallet
+}
+
 func (s *resolveServer) snapshot() ([]data.LinkedAccount, *data.PrivyWallet, int, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -167,18 +174,21 @@ func newResolveClient(t *testing.T, state *resolveServer) *PrivyClient {
 	}
 }
 
-// The lookup by external id identifies the wallet even when the user record does not carry
-// the external id at all — which is the whole reason the lookup exists.
-func TestResolveCreatedWallet_IdentifiesByExternalIDLookup(t *testing.T) {
+// The lookup by external id resolves the wallet even when the user record does not carry the
+// external id at all — which is the whole reason the lookup exists.
+func TestFindWalletByExternalID_ResolvesWithoutTheEchoedExternalID(t *testing.T) {
 	state := &resolveServer{
 		accounts: []data.LinkedAccount{walletZeroAccount(), walletOneAccount("")},
 		wallet:   walletOneObject(),
 	}
 	cli := newResolveClient(t, state)
 
-	wallet, httpErr := cli.resolveCreatedWallet(walletTestPrivyID, resolveExternalID, map[string]bool{"w0": true})
+	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
 	if httpErr != nil {
-		t.Fatalf("resolveCreatedWallet() error = %+v", httpErr)
+		t.Fatalf("findWalletByExternalID() error = %+v", httpErr)
+	}
+	if wallet == nil {
+		t.Fatal("findWalletByExternalID() = nil, want the wallet Privy holds under the external id")
 	}
 
 	if wallet.Address != walletOneAddr {
@@ -195,31 +205,42 @@ func TestResolveCreatedWallet_IdentifiesByExternalIDLookup(t *testing.T) {
 	}
 }
 
-// The production case. A replayed create returns only wallets the caller already knew, so
-// the new wallet is in `known` and no response-based selection can ever pick it out. The
-// lookup is what breaks the tie, and getting this wrong is a 500 no retry can clear.
-func TestResolveCreatedWallet_IdentifiesAReplayedCreate(t *testing.T) {
-	state := &resolveServer{
-		accounts: []data.LinkedAccount{walletZeroAccount(), walletOneAccount("")},
-		wallet:   walletOneObject(),
-	}
+// No wallet under the external id is an answer, not a failure: it is what tells the caller
+// this purpose has never been provisioned and a create is due.
+func TestFindWalletByExternalID_ReturnsNilWhenNoWalletExists(t *testing.T) {
+	state := &resolveServer{accounts: []data.LinkedAccount{walletZeroAccount()}}
 	cli := newResolveClient(t, state)
 
-	known := map[string]bool{"w0": true, "w1": true}
-
-	wallet, httpErr := cli.resolveCreatedWallet(walletTestPrivyID, resolveExternalID, known)
+	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
 	if httpErr != nil {
-		t.Fatalf("resolveCreatedWallet() error = %+v, want the wallet the replayed create had already made", httpErr)
+		t.Fatalf("findWalletByExternalID() error = %+v, want a nil wallet and no error", httpErr)
 	}
-	if wallet.Address != walletOneAddr {
-		t.Errorf("Address = %s, want %s", wallet.Address, walletOneAddr)
+	if wallet != nil {
+		t.Errorf("findWalletByExternalID() = %+v, want nil", wallet)
 	}
 }
 
-// With the lookup answering 404, the refetched user record has to carry the identification.
-// The cached record cannot: it was read before the create, so it is answered from Privy or
-// not at all.
-func TestResolveCreatedWallet_FallsBackToTheRefetchedUser(t *testing.T) {
+// A lookup that fails is not a lookup that found nothing. Treating the two alike would read
+// a Privy outage as "no wallet exists" and let the caller create a second one.
+func TestFindWalletByExternalID_PropagatesALookupFailure(t *testing.T) {
+	state := &resolveServer{
+		accounts:     []data.LinkedAccount{walletZeroAccount(), walletOneAccount("")},
+		lookupStatus: http.StatusInternalServerError,
+	}
+	cli := newResolveClient(t, state)
+
+	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
+	if httpErr == nil {
+		t.Fatalf("findWalletByExternalID() returned wallet %+v, want the lookup failure", wallet)
+	}
+	if got := atomic.LoadInt64(&state.getCount); got != 0 {
+		t.Errorf("user fetches = %d, want 0: a failed lookup must not be answered by guessing from the user record", got)
+	}
+}
+
+// Straight after a create the cached record predates the wallet, so a miss against it is
+// expected rather than conclusive and has to be answered from Privy.
+func TestFindWalletByExternalID_RefetchesWhenTheCachedRecordPredatesTheWallet(t *testing.T) {
 	state := &resolveServer{accounts: []data.LinkedAccount{walletZeroAccount()}}
 	cli := newResolveClient(t, state)
 
@@ -228,12 +249,13 @@ func TestResolveCreatedWallet_FallsBackToTheRefetchedUser(t *testing.T) {
 		t.Fatalf("GetUser() error = %+v", httpErr)
 	}
 
-	// The create lands, and this time Privy does echo the external id back on the user.
-	state.setAccounts([]data.LinkedAccount{walletZeroAccount(), walletOneAccount(resolveExternalID)})
+	// The create lands: the wallet now exists and the user record carries it.
+	state.setAccounts([]data.LinkedAccount{walletZeroAccount(), walletOneAccount("")})
+	state.setWallet(walletOneObject())
 
-	wallet, httpErr := cli.resolveCreatedWallet(walletTestPrivyID, resolveExternalID, map[string]bool{"w0": true})
+	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
 	if httpErr != nil {
-		t.Fatalf("resolveCreatedWallet() error = %+v", httpErr)
+		t.Fatalf("findWalletByExternalID() error = %+v", httpErr)
 	}
 
 	if wallet.Address != walletOneAddr {
@@ -244,36 +266,18 @@ func TestResolveCreatedWallet_FallsBackToTheRefetchedUser(t *testing.T) {
 	}
 }
 
-// Neither source names the external id, so the wallet is identified as the delegated eth
-// wallet the user did not hold before the create. This is the only remaining signal, and it
-// is unambiguous because a create makes exactly one wallet.
-func TestResolveCreatedWallet_FallsBackToTheUnknownDelegatedWallet(t *testing.T) {
-	state := &resolveServer{
-		accounts: []data.LinkedAccount{walletZeroAccount(), walletOneAccount("")},
-	}
-	cli := newResolveClient(t, state)
-
-	wallet, httpErr := cli.resolveCreatedWallet(walletTestPrivyID, resolveExternalID, map[string]bool{"w0": true})
-	if httpErr != nil {
-		t.Fatalf("resolveCreatedWallet() error = %+v", httpErr)
-	}
-	if wallet.Address != walletOneAddr {
-		t.Errorf("Address = %s, want %s", wallet.Address, walletOneAddr)
-	}
-}
-
-// The record the caller gets back is also the record the next signature resolves against,
-// so resolving has to leave the cache agreeing with Privy.
-func TestResolveCreatedWallet_LeavesTheCacheConsistent(t *testing.T) {
+// The record the caller gets back is also the record the next signature resolves against, so
+// resolving has to leave the cache agreeing with Privy.
+func TestFindWalletByExternalID_LeavesTheCacheConsistent(t *testing.T) {
 	state := &resolveServer{
 		accounts: []data.LinkedAccount{walletZeroAccount(), walletOneAccount("")},
 		wallet:   walletOneObject(),
 	}
 	cli := newResolveClient(t, state)
 
-	wallet, httpErr := cli.resolveCreatedWallet(walletTestPrivyID, resolveExternalID, map[string]bool{"w0": true})
+	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
 	if httpErr != nil {
-		t.Fatalf("resolveCreatedWallet() error = %+v", httpErr)
+		t.Fatalf("findWalletByExternalID() error = %+v", httpErr)
 	}
 
 	item := cli.userCache.Get(walletTestPrivyID)
@@ -290,23 +294,19 @@ func TestResolveCreatedWallet_LeavesTheCacheConsistent(t *testing.T) {
 	}
 }
 
-// The account the refetch path returns is a copy. That path selects straight out of the
-// refetched record, whose LinkedAccounts slice shares its backing array with the cache
-// entry, so handing back a pointer into it would let any caller reach through and rewrite
-// what every later signature resolves.
-//
-// The lookup path cannot show this: it reads accounts out of a range copy and so hands back
-// a copy either way. Identification here is left to the refetch — no wallet under the
-// external id — which is the path where the copy is load bearing.
-func TestResolveCreatedWallet_RefetchReturnsACopyOfTheCachedAccount(t *testing.T) {
+// The account handed back is a copy. It is read out of a record whose LinkedAccounts slice
+// shares its backing array with the cache entry, so returning a pointer into it would let any
+// caller reach through and rewrite what every later signature resolves.
+func TestFindWalletByExternalID_ReturnsACopyOfTheCachedAccount(t *testing.T) {
 	state := &resolveServer{
 		accounts: []data.LinkedAccount{walletZeroAccount(), walletOneAccount("")},
+		wallet:   walletOneObject(),
 	}
 	cli := newResolveClient(t, state)
 
-	wallet, httpErr := cli.resolveCreatedWallet(walletTestPrivyID, resolveExternalID, map[string]bool{"w0": true})
+	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
 	if httpErr != nil {
-		t.Fatalf("resolveCreatedWallet() error = %+v", httpErr)
+		t.Fatalf("findWalletByExternalID() error = %+v", httpErr)
 	}
 
 	wallet.Address = "0xdead000000000000000000000000000000000000"
@@ -317,66 +317,102 @@ func TestResolveCreatedWallet_RefetchReturnsACopyOfTheCachedAccount(t *testing.T
 	}
 }
 
-// Nothing identifies the wallet: the lookup finds none and every wallet on the user was
-// already known. Guessing here would hand back a wallet that may hold someone else's money,
-// so the call fails.
-func TestResolveCreatedWallet_FailsWhenNothingIdentifiesTheWallet(t *testing.T) {
-	state := &resolveServer{accounts: []data.LinkedAccount{walletZeroAccount()}}
+// A wallet Privy holds but does not list on the user is not usable: the signing path resolves
+// addresses out of the user record, so returning it would hand back an address no signature
+// could reach.
+func TestFindWalletByExternalID_FailsWhenTheWalletIsNotOnTheUser(t *testing.T) {
+	state := &resolveServer{
+		accounts: []data.LinkedAccount{walletZeroAccount()},
+		wallet:   walletOneObject(),
+	}
 	cli := newResolveClient(t, state)
 
-	wallet, httpErr := cli.resolveCreatedWallet(walletTestPrivyID, resolveExternalID, map[string]bool{"w0": true})
+	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
 	if httpErr == nil {
-		t.Fatalf("resolveCreatedWallet() returned wallet %+v, want an error", wallet)
+		t.Fatalf("findWalletByExternalID() returned wallet %+v, want an error", wallet)
 	}
 	if httpErr.Code != http.StatusInternalServerError {
 		t.Errorf("Code = %d, want 500", httpErr.Code)
 	}
 }
 
-// A wallet found by external id still has to be delegated on ethereum. One that is not
-// would serve user-initiated signing and fail every Axal-initiated one, so it is rejected
-// rather than returned.
-func TestResolveCreatedWallet_RejectsAWalletThatIsNotDelegated(t *testing.T) {
+// Same wallet, listed on the user but not delegated. Axal-initiated signing would be refused
+// for it, so it is rejected rather than returned.
+func TestFindWalletByExternalID_FailsWhenTheUserWalletIsNotDelegated(t *testing.T) {
 	undelegated := walletOneAccount(resolveExternalID)
 	undelegated.Delegated = false
 
-	state := &resolveServer{accounts: []data.LinkedAccount{walletZeroAccount(), undelegated}}
+	state := &resolveServer{
+		accounts: []data.LinkedAccount{walletZeroAccount(), undelegated},
+		wallet:   walletOneObject(),
+	}
 	cli := newResolveClient(t, state)
 
-	wallet, httpErr := cli.resolveCreatedWallet(walletTestPrivyID, resolveExternalID, map[string]bool{"w0": true})
+	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
 	if httpErr == nil {
-		t.Fatalf("resolveCreatedWallet() returned undelegated wallet %+v, want an error", wallet)
+		t.Fatalf("findWalletByExternalID() returned undelegated wallet %+v, want an error", wallet)
 	}
 	if httpErr.Code != http.StatusInternalServerError {
 		t.Errorf("Code = %d, want 500", httpErr.Code)
 	}
 }
 
-// A lookup that fails is not a lookup that found nothing. Treating the two alike would read
-// a Privy outage as "no wallet exists" and let the caller create a second one.
-func TestResolveCreatedWallet_PropagatesALookupFailure(t *testing.T) {
+// The user record is the last source of truth, so its failure is the call's failure.
+func TestFindWalletByExternalID_PropagatesAUserFetchFailure(t *testing.T) {
 	state := &resolveServer{
-		accounts:     []data.LinkedAccount{walletZeroAccount(), walletOneAccount("")},
-		lookupStatus: http.StatusInternalServerError,
+		wallet:     walletOneObject(),
+		userStatus: http.StatusInternalServerError,
 	}
 	cli := newResolveClient(t, state)
 
-	wallet, httpErr := cli.resolveCreatedWallet(walletTestPrivyID, resolveExternalID, map[string]bool{"w0": true})
+	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
 	if httpErr == nil {
-		t.Fatalf("resolveCreatedWallet() returned wallet %+v, want the lookup failure", wallet)
-	}
-	if got := atomic.LoadInt64(&state.getCount); got != 0 {
-		t.Errorf("user fetches = %d, want 0: a failed lookup must not be answered by guessing from the user record", got)
+		t.Fatalf("findWalletByExternalID() returned wallet %+v, want the user fetch failure", wallet)
 	}
 }
 
-// The refetch is the last source of truth, so its failure is the call's failure.
-func TestResolveCreatedWallet_PropagatesAUserFetchFailure(t *testing.T) {
-	state := &resolveServer{userStatus: http.StatusInternalServerError}
+// Axal's key quorum has to be attached, or the wallet serves user-initiated signing and fails
+// every Axal-initiated one — rebalancing and reward claiming — silently. A wallet without it
+// is rejected before the user record is even consulted.
+func TestAccountForWallet_RejectsAWalletWithoutAxalsSigner(t *testing.T) {
+	state := &resolveServer{
+		accounts: []data.LinkedAccount{walletZeroAccount(), walletOneAccount(resolveExternalID)},
+	}
 	cli := newResolveClient(t, state)
 
-	wallet, httpErr := cli.resolveCreatedWallet(walletTestPrivyID, resolveExternalID, map[string]bool{"w0": true})
+	for name, signers := range map[string][]*data.AdditionalSigner{
+		"no signers":      nil,
+		"another quorum":  {{SignerID: "someone-elses-quorum"}},
+		"an empty signer": {{SignerID: ""}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			wallet := walletOneObject()
+			wallet.AdditionalSigners = signers
+
+			account, httpErr := cli.accountForWallet(walletTestPrivyID, resolveExternalID, wallet)
+			if httpErr == nil {
+				t.Fatalf("accountForWallet() returned %+v, want a wallet Axal cannot sign for to be rejected", account)
+			}
+			if httpErr.Code != http.StatusInternalServerError {
+				t.Errorf("Code = %d, want 500", httpErr.Code)
+			}
+		})
+	}
+}
+
+// The signer check is not enough on its own: a quorum attached to a wallet on another chain
+// would pass it, and the enclave only signs EVM transactions.
+func TestAccountForWallet_RejectsANonEthereumWallet(t *testing.T) {
+	state := &resolveServer{
+		accounts: []data.LinkedAccount{walletZeroAccount(), walletOneAccount(resolveExternalID)},
+	}
+	cli := newResolveClient(t, state)
+
+	wallet := walletOneObject()
+	wallet.ChainType = "solana"
+
+	account, httpErr := cli.accountForWallet(walletTestPrivyID, resolveExternalID, wallet)
 	if httpErr == nil {
-		t.Fatalf("resolveCreatedWallet() returned wallet %+v, want the user fetch failure", wallet)
+		t.Fatalf("accountForWallet() returned %+v, want a non-ethereum wallet to be rejected", account)
 	}
 }

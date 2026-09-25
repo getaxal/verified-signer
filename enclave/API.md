@@ -168,11 +168,39 @@ received money. Four guards stack, so none has to be perfect alone:
 | `privy-idempotency-key` + unique `external_id` | Retries this process never sees | Across instances |
 
 The third guard is the only one that does not depend on Privy echoing `external_id` back
-inside `linked_accounts`. Without it, a missing echo makes read-before-create blind, the
-create is answered with an idempotent replay carrying no wallet the enclave has not already
-seen, and the request fails with a `500` that no retry clears — while the wallet exists and
-may be funded. A create that returns `200` without naming a new wallet therefore falls back
-to this lookup and a cache-bypassing reread of the user, rather than failing.
+inside `linked_accounts`, which is why it is worth an extra round trip. It is also what makes
+a create error safe to doubt: Privy caches `4xx` and `5xx` responses against the idempotency
+key and **replays them for 24 hours**, so a create that failed on the way back would
+otherwise answer every retry with the same cached error while the wallet it made sits
+unused. The external id — unique per app — is the durable duplicate guard, not the
+idempotency key.
+
+### Upstream endpoint
+
+The wallet is created on Privy's wallet API, `POST /v1/wallets`, with `owner` set to the
+user and the enclave's key quorum attached as an `additional_signer`:
+
+```jsonc
+{
+  "chain_type": "ethereum",
+  "external_id": "cm00000000000000000001-wealth_plan",
+  "owner": { "user_id": "did:privy:cm00000000000000000001" },
+  "additional_signers": [ { "signer_id": "<delegated actions key id>" } ]
+}
+```
+
+Not `POST /v1/users/{user_id}/wallets`. That endpoint provisions the embedded wallet a user
+does not yet have and answers `200` **without creating anything** for a chain type the user
+already holds, so requests for a second wallet succeeded while minting nothing. Owner and
+additional signer are distinct roles and both matter: the user owns the wallet, so it is
+theirs and appears on their account, while the quorum is what authorises Axal-initiated
+signing on `POST /v1/wallets/{id}/rpc`. Passing the quorum as `owner_id` instead would take
+the wallet away from the user.
+
+Two assertions guard the response. Axal's quorum must be among the created wallet's
+`additional_signers`, and the wallet must appear on the user as a `delegated` `ethereum`
+account — the first is what lets the enclave sign, the second is what lets it resolve the
+address to sign with.
 
 The wallet is also written into the user cache before this call returns, so a caller that
 provisions a wallet and immediately signs with it will find it.
