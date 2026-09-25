@@ -28,6 +28,9 @@ The Transaction Verifier implements safety checks and validates transactions aga
 
 ## API Endpoints
 
+Full request and response shapes, including the HMAC preimages and error table, are in
+[API.md](API.md). The summary below is the route list.
+
 ### Health Check
 - **GET** `/api/v1/health/ping` - Health check endpoint for service availability
 
@@ -58,22 +61,37 @@ becomes part of the external ID, which Privy restricts to `[a-zA-Z0-9_-]`.
 
 **Repeat calls return the existing wallet.** A duplicate wallet is not a failed
 request that can be retried away — it is a second address that may already have
-received money, with no way to tell which one the user's funds went to. Three
+received money, with no way to tell which one the user's funds went to. Four
 guards stack, so none has to be perfect on its own:
 
 1. a singleflight group keyed on the external ID collapses concurrent callers
    within an enclave into a single create;
 2. the create is skipped when the user already holds a wallet with that external ID;
-3. Privy receives a deterministic `privy-idempotency-key` and a unique `external_id`,
+3. the wallet is looked up directly as `GET /v1/wallets/ext_wal_<external_id>`, which
+   answers whether one exists regardless of what the user record shows;
+4. Privy receives a deterministic `privy-idempotency-key` and a unique `external_id`,
    which covers retries this process never sees — a caller that gave up and
    redialled, or a second enclave instance.
 
-Only the third guard holds across instances. Privy documents external IDs as unique
-per app; that is the property worth verifying rather than assuming.
+Guards 3 and 4 are the ones that hold across instances, and guard 3 is the only one
+that does not depend on Privy echoing our `external_id` back inside
+`linked_accounts`. Guard 2 alone is not enough for exactly that reason: when the
+echo is missing, a user who already holds the wallet is indistinguishable from one
+who does not, the create goes out anyway, and guard 4 answers it with a replay of
+the earlier response — carrying no wallet the enclave has not already seen. That
+combination used to fail the request with a 500 that no retry could clear until the
+idempotency record expired, at which point the create would instead mint the second
+address the whole design exists to prevent.
 
-The wallet is asserted to come back `delegated` on `ethereum` before it is returned,
-and the user's cache entry is dropped so the new wallet is resolvable by the very
-next signature rather than after the cache TTL.
+So a create that returns `200` without naming a new wallet is not treated as a
+failure: Privy has been asked and agreed, so the question is which wallet it is, and
+guard 3 plus a cache-bypassing reread of the user answers it.
+
+The wallet is asserted to come back `delegated` on `ethereum` before it is returned —
+`delegated` is what the signing path filters on, and Privy sets it on wallets that
+have a signer attached, so a wallet failing this assertion is one Axal could not sign
+with. The new wallet is written into the user's cache entry, so it is resolvable by
+the very next signature rather than after the cache TTL.
 
 ### Ethereum Signing
 - **POST** `/api/v1/user/signer/eth/secp256k1Sign` - User-authenticated raw-hash signature generation

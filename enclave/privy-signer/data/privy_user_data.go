@@ -189,6 +189,47 @@ func NewCreateEthWalletRequestWithExternalID(delegatedSignerId string, externalI
 	}
 }
 
+// PrivyWallet is the wallet object Privy's wallet endpoints return.
+//
+// It is not a linked_accounts entry and the two are not interchangeable. This carries the
+// wallet's signer configuration, which the user object does not expose, and lacks
+// wallet_index and delegated, which only the user object has.
+type PrivyWallet struct {
+	ID                string              `json:"id"`
+	Address           string              `json:"address"`
+	ChainType         string              `json:"chain_type,omitempty"`
+	ExternalID        string              `json:"external_id,omitempty"`
+	PublicKey         string              `json:"public_key,omitempty"`
+	OwnerID           string              `json:"owner_id,omitempty"`
+	AdditionalSigners []*AdditionalSigner `json:"additional_signers,omitempty"`
+}
+
+// Reports whether a key quorum is attached to the wallet as an additional signer.
+//
+// This is what authorises Axal-initiated signing: the /rpc call is accepted because the
+// request is signed by this quorum's key. It is the difference between a wallet the enclave
+// can rebalance from and one only its user can ever move, so it is checked rather than
+// assumed for a wallet we did not watch being created.
+func (w *PrivyWallet) HasAdditionalSigner(signerID string) bool {
+	if signerID == "" {
+		return false
+	}
+
+	for _, signer := range w.AdditionalSigners {
+		if signer != nil && signer.SignerID == signerID {
+			return true
+		}
+	}
+
+	return false
+}
+
+// The identifier Privy's wallet endpoints accept in place of a wallet id, for a wallet
+// carrying an external id.
+func ExternalWalletRef(externalID string) string {
+	return "ext_wal_" + externalID
+}
+
 // CreateWalletResponse represents the response for creating a single wallet
 type CreateWalletResponse struct {
 	ID             string           `json:"id"`
