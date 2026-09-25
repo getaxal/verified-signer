@@ -59,6 +59,23 @@ which is what identifies the wallet on any later call. Purposes are lowercase
 `[a-z][a-z0-9_-]{0,31}`; the charset is narrower than it looks because the purpose
 becomes part of the external ID, which Privy restricts to `[a-zA-Z0-9_-]`.
 
+The wallet is created on Privy's **wallet API** (`POST /v1/wallets`), with `owner` set
+to the user and the enclave's key quorum attached as an `additional_signer`:
+
+```jsonc
+{ "chain_type": "ethereum", "external_id": "<subject>-wealth_plan",
+  "owner": { "user_id": "did:privy:..." },
+  "additional_signers": [ { "signer_id": "<delegated actions key id>" } ] }
+```
+
+Not `POST /v1/users/{user_id}/wallets`. That endpoint provisions the embedded wallet a
+user does not yet have, and **answers `200` without creating anything** for a chain type
+the user already holds — so every request for a second wallet succeeded while minting
+nothing. Owner and additional signer are different roles and both are load bearing: the
+user owns the wallet, so it is theirs and appears on their account, while the quorum is
+what authorises Axal-initiated signing. Setting the quorum as `owner_id` instead would
+take the wallet away from the user.
+
 **Repeat calls return the existing wallet.** A duplicate wallet is not a failed
 request that can be retried away — it is a second address that may already have
 received money, with no way to tell which one the user's funds went to. Four
@@ -69,29 +86,30 @@ guards stack, so none has to be perfect on its own:
 2. the create is skipped when the user already holds a wallet with that external ID;
 3. the wallet is looked up directly as `GET /v1/wallets/ext_wal_<external_id>`, which
    answers whether one exists regardless of what the user record shows;
-4. Privy receives a deterministic `privy-idempotency-key` and a unique `external_id`,
-   which covers retries this process never sees — a caller that gave up and
-   redialled, or a second enclave instance.
+4. Privy receives a deterministic `privy-idempotency-key`, and the external ID is unique
+   per app, so a duplicate create collides server side rather than quietly producing a
+   second funded address.
 
 Guards 3 and 4 are the ones that hold across instances, and guard 3 is the only one
-that does not depend on Privy echoing our `external_id` back inside
-`linked_accounts`. Guard 2 alone is not enough for exactly that reason: when the
-echo is missing, a user who already holds the wallet is indistinguishable from one
-who does not, the create goes out anyway, and guard 4 answers it with a replay of
-the earlier response — carrying no wallet the enclave has not already seen. That
-combination used to fail the request with a 500 that no retry could clear until the
-idempotency record expired, at which point the create would instead mint the second
-address the whole design exists to prevent.
+that does not depend on Privy echoing our `external_id` back inside `linked_accounts`.
+Guard 2 alone is not enough for exactly that reason: when the echo is missing, a user
+who already holds the wallet is indistinguishable from one who does not.
 
-So a create that returns `200` without naming a new wallet is not treated as a
-failure: Privy has been asked and agreed, so the question is which wallet it is, and
-guard 3 plus a cache-bypassing reread of the user answers it.
+Guard 4 also has a sharp edge worth knowing: **Privy caches `4xx` and `5xx` responses
+against the idempotency key and replays them for 24 hours.** A create that failed on the
+way back therefore answers every retry with the same cached error, while the wallet it
+made sits there. So a create error is never reported before guard 3 has been asked
+whether a wallet exists — the external ID, not the idempotency key, is the durable
+duplicate guard.
 
-The wallet is asserted to come back `delegated` on `ethereum` before it is returned —
-`delegated` is what the signing path filters on, and Privy sets it on wallets that
-have a signer attached, so a wallet failing this assertion is one Axal could not sign
-with. The new wallet is written into the user's cache entry, so it is resolvable by
-the very next signature rather than after the cache TTL.
+Two things are asserted before a wallet is returned, because each covers a different
+failure. Axal's key quorum must be among the wallet's `additional_signers` — that is what
+`POST /v1/wallets/{id}/rpc` checks, so a wallet without it would serve user-initiated
+signing and fail every Axal-initiated one, silently. And the wallet must appear on the
+user as a `delegated` `ethereum` account, because the signing path resolves addresses out
+of that record; a wallet missing from it is an address no signature could reach. The
+record is fetched past the cache when needed, so the wallet is resolvable by the very
+next signature rather than after the cache TTL.
 
 ### Ethereum Signing
 - **POST** `/api/v1/user/signer/eth/secp256k1Sign` - User-authenticated raw-hash signature generation

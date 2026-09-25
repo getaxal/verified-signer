@@ -44,6 +44,15 @@ type walletProvisioningServer struct {
 	// in production. Set before the first request.
 	suppressExternalID bool
 	replayIdempotency  bool
+
+	// Non-zero to answer the create with this status after minting the wallet, standing for a
+	// create that landed and then failed on the way back — or for the cached error Privy
+	// replays against the same idempotency key for the next 24 hours.
+	createStatus int
+
+	// Set alongside createStatus to fail without minting, standing for a create that never
+	// landed at all.
+	suppressCreate bool
 }
 
 func (s *walletProvisioningServer) linkedAccounts() []data.LinkedAccount {
@@ -73,36 +82,49 @@ func (s *walletProvisioningServer) linkedAccountsLocked() []data.LinkedAccount {
 	return accounts
 }
 
-// Mints a new wallet unconditionally, mirroring Privy's create-next behaviour.
-func (s *walletProvisioningServer) mint(externalID string) []data.LinkedAccount {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	n := len(s.created) + 1
-	s.created = append(s.created, data.LinkedAccount{
-		WalletID:  fmt.Sprintf("w%d", n),
-		Type:      "wallet",
-		Address:   fmt.Sprintf("0xbbbb00000000000000000000000000000000000%d", n),
-		ChainType: "ethereum", Delegated: true, WalletIndex: n,
-		ExternalID: externalID,
-	})
-
-	return s.linkedAccountsLocked()
-}
-
-// Records an idempotency key and reports whether it has been seen before, which is what
-// decides between minting a wallet and replaying the earlier response.
-func (s *walletProvisioningServer) recordCreate(idemKey string, externalID string) bool {
+// Mints a wallet and returns it as the wallet API does, which is a wallet object rather than
+// the user. A repeated idempotency key replays the wallet the first call made.
+func (s *walletProvisioningServer) mint(externalID string, idemKey string) *data.PrivyWallet {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.idemKeys = append(s.idemKeys, idemKey)
 	s.externalIDs = append(s.externalIDs, externalID)
 
-	seen := s.seenIdemKeys[idemKey]
+	if s.replayIdempotency && s.seenIdemKeys[idemKey] {
+		for _, acc := range s.created {
+			if acc.ExternalID == externalID {
+				return walletObject(acc)
+			}
+		}
+	}
 	s.seenIdemKeys[idemKey] = true
 
-	return seen && s.replayIdempotency
+	n := len(s.created) + 1
+	acc := data.LinkedAccount{
+		WalletID:  fmt.Sprintf("w%d", n),
+		Type:      "wallet",
+		Address:   fmt.Sprintf("0xbbbb00000000000000000000000000000000000%d", n),
+		ChainType: "ethereum", Delegated: true, WalletIndex: n,
+		ExternalID: externalID,
+	}
+	s.created = append(s.created, acc)
+
+	return walletObject(acc)
+}
+
+// The same wallet as Privy's wallet endpoints render it: signers attached, and no
+// wallet_index or delegated flag, because a wallet object carries neither.
+func walletObject(acc data.LinkedAccount) *data.PrivyWallet {
+	return &data.PrivyWallet{
+		ID:         acc.WalletID,
+		Address:    acc.Address,
+		ChainType:  acc.ChainType,
+		ExternalID: acc.ExternalID,
+		AdditionalSigners: []*data.AdditionalSigner{
+			{SignerID: "test-signer-id"},
+		},
+	}
 }
 
 // Resolves Privy's ext_wal_<external id> wallet reference, or nil when no wallet carries it.
@@ -162,31 +184,46 @@ func newWalletProvisioningClient(t *testing.T, getDelay time.Duration) (*PrivyCl
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(b)
 
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/wallets"):
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/wallets":
 			atomic.AddInt64(&state.postCount, 1)
 
-			var body data.CreateWalletRequest
+			var body data.CreateWalletForOwnerRequest
 			_ = json.NewDecoder(r.Body).Decode(&body)
 
-			externalID := ""
-			if len(body.PrivyWalletCreateRequestWallets) > 0 {
-				externalID = body.PrivyWalletCreateRequestWallets[0].ExternalID
+			// Owner and additional signer are what make the wallet the user's and signable by
+			// Axal. A create missing either is not the call the enclave means to make, whatever
+			// it returns.
+			if body.Owner == nil || body.Owner.UserID != walletTestPrivyID {
+				t.Errorf("create wallet owner = %+v, want user %s", body.Owner, walletTestPrivyID)
+			}
+			if len(body.AdditionalSigners) != 1 || body.AdditionalSigners[0].SignerID != "test-signer-id" {
+				t.Errorf("create wallet additional_signers = %+v, want the delegated actions quorum", body.AdditionalSigners)
+			}
+			if body.ChainType != "ethereum" {
+				t.Errorf("create wallet chain_type = %q, want ethereum", body.ChainType)
 			}
 
-			// A repeated idempotency key replays rather than mints, so the response carries
-			// no wallet the caller has not already seen.
-			accounts := state.linkedAccounts()
-			if !state.recordCreate(r.Header.Get("privy-idempotency-key"), externalID) {
-				accounts = state.mint(externalID)
-			}
-			resp := data.CreateWalletResponse{ID: "created"}
-			for i := range accounts {
-				resp.LinkedAccounts = append(resp.LinkedAccounts, &accounts[i])
+			var wallet *data.PrivyWallet
+			if !state.suppressCreate {
+				wallet = state.mint(body.ExternalID, r.Header.Get("privy-idempotency-key"))
 			}
 
-			b, _ := json.Marshal(resp)
+			if status := state.createStatus; status != 0 {
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"error":"create failed"}`))
+				return
+			}
+
+			b, _ := json.Marshal(wallet)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(b)
+
+		// The user-scoped create only provisions the wallet at HD index 0. Every user in
+		// these tests already has one, so reaching it means the enclave asked the wrong
+		// endpoint for an additional wallet.
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/wallets"):
+			t.Errorf("additional wallet requested from the user-scoped create endpoint: %s", r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
 
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -424,5 +461,39 @@ func TestCreateUserWallet_ExternalIDLookupReturnsASignableWallet(t *testing.T) {
 	}
 	if _, httpErr := cli.resolveDelegatedWallet(walletTestPrivyID, wallet.Address); httpErr != nil {
 		t.Errorf("wallet resolved by external id is not signable: %+v", httpErr)
+	}
+}
+
+// A create that fails may still have created the wallet, and Privy caches 4xx and 5xx
+// responses against the idempotency key and replays them for 24 hours. Reporting the failure
+// without looking would strand a wallet that exists and leave every retry answered by the
+// same cached error — so the wallet is looked up before the error is believed.
+func TestCreateUserWallet_RecoversWhenACreateErrorHidesASuccess(t *testing.T) {
+	cli, state := newWalletProvisioningClient(t, 0)
+	state.createStatus = http.StatusInternalServerError
+
+	wallet, httpErr := cli.CreateUserWallet(walletTestPrivyID, wealthPurpose)
+	if httpErr != nil {
+		t.Fatalf("CreateUserWallet() error = %+v, want the wallet the failed create had already made", httpErr)
+	}
+
+	if wallet.Address == walletZeroAddr {
+		t.Errorf("Address = %s, want the newly created wallet rather than wallet 0", wallet.Address)
+	}
+	if !wallet.Delegated {
+		t.Error("recovered wallet is not delegated, so Axal could not sign with it")
+	}
+}
+
+// The same failure with nothing behind it stays a failure. Recovering from an error must mean
+// finding the wallet, never assuming one.
+func TestCreateUserWallet_ReportsACreateFailureWithNothingBehindIt(t *testing.T) {
+	cli, state := newWalletProvisioningClient(t, 0)
+	state.createStatus = http.StatusInternalServerError
+	state.suppressCreate = true
+
+	wallet, httpErr := cli.CreateUserWallet(walletTestPrivyID, wealthPurpose)
+	if httpErr == nil {
+		t.Fatalf("CreateUserWallet() returned %+v, want the create failure", wallet)
 	}
 }

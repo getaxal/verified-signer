@@ -163,17 +163,14 @@ type AdditionalSigner struct {
 	OverridePolicyIDs []string `json:"override_policy_ids,omitempty"`
 }
 
-func NewCreateEthWalletRequest(delegatedSignerId string) *CreateWalletRequest {
-	return NewCreateEthWalletRequestWithExternalID(delegatedSignerId, "")
-}
-
-// Creates an eth wallet create request carrying a Privy external id.
+// Creates the request that provisions a user's embedded eth wallet, the one at HD index 0.
 //
-// The external id is what makes a purpose-built wallet addressable and findable later. It
-// is also our outermost duplicate guard: Privy documents external ids as unique per app,
-// so a second create under the same id collides there rather than quietly producing a
-// second funded address.
-func NewCreateEthWalletRequestWithExternalID(delegatedSignerId string, externalID string) *CreateWalletRequest {
+// It carries no external id, because this endpoint does not mint wallets on demand: it
+// provisions the embedded wallet a user does not yet have and answers 200 without creating
+// anything for a chain type they already hold. An external id here would be assigned to a
+// wallet only on the very first provision and silently dropped afterwards. Purpose-built
+// wallets are created with NewCreateDelegatedEthWalletRequest instead.
+func NewCreateEthWalletRequest(delegatedSignerId string) *CreateWalletRequest {
 	return &CreateWalletRequest{
 		PrivyWalletCreateRequestWallets: []*CreateWalletData{
 			{
@@ -183,8 +180,41 @@ func NewCreateEthWalletRequestWithExternalID(delegatedSignerId string, externalI
 						SignerID: delegatedSignerId,
 					},
 				},
-				ExternalID: externalID,
 			},
+		},
+	}
+}
+
+// CreateWalletForOwnerRequest creates a wallet on Privy's wallet API, owned by a user.
+//
+// This is not the same call as CreateWalletRequest, which posts to a user's own wallets
+// collection and only provisions the embedded wallet a user does not yet have — it is a
+// no-op for a chain type the user already holds, which is no way to add a second wallet.
+// This one mints a wallet per call, which is what a purpose-built wallet needs.
+//
+// Owner and additional signer are different roles and both are load bearing. The user owns
+// the wallet, so it is theirs and appears on their account; our key quorum is attached as an
+// additional signer, which is what authorises Axal-initiated signing. Setting our quorum as
+// the owner instead would take the wallet away from the user.
+type CreateWalletForOwnerRequest struct {
+	ChainType         string              `json:"chain_type"`
+	ExternalID        string              `json:"external_id,omitempty"`
+	Owner             *WalletOwner        `json:"owner,omitempty"`
+	AdditionalSigners []*AdditionalSigner `json:"additional_signers,omitempty"`
+}
+
+// WalletOwner names the Privy user a wallet belongs to.
+type WalletOwner struct {
+	UserID string `json:"user_id"`
+}
+
+func NewCreateDelegatedEthWalletRequest(privyId string, delegatedSignerId string, externalID string) *CreateWalletForOwnerRequest {
+	return &CreateWalletForOwnerRequest{
+		ChainType:  "ethereum",
+		ExternalID: externalID,
+		Owner:      &WalletOwner{UserID: privyId},
+		AdditionalSigners: []*AdditionalSigner{
+			{SignerID: delegatedSignerId},
 		},
 	}
 }

@@ -24,37 +24,56 @@ type walletCreateResult struct {
 // Asking twice for the same purpose returns the same wallet rather than minting a second
 // one. That matters more than it looks: a duplicate wallet is not a failed request that
 // can be retried away, it is a second address that may already have received money, with
-// no way to tell which one the user's funds went to. Three guards stack up, so no single
+// no way to tell which one the user's funds went to. Four guards stack up, so no single
 // one has to be perfect:
 //
 //  1. a singleflight group keyed on the external id collapses concurrent callers in this
 //     enclave into one create;
 //  2. the create is skipped entirely when the user already holds the wallet;
-//  3. Privy is sent a deterministic idempotency key and a unique external id, which
-//     covers retries this process never sees — a caller that gave up and redialled, or a
-//     second enclave instance.
+//  3. the wallet is looked up by external id directly, which answers whether one exists
+//     regardless of what the user's linked accounts show;
+//  4. Privy is sent a deterministic idempotency key, and the external id is unique per app,
+//     so a duplicate create collides server side rather than quietly producing a second
+//     funded address.
 //
-// Guard 3 is the only one that holds across instances, so it is the one to verify against
-// Privy rather than assume.
+// Guards 3 and 4 are the ones that hold across instances, and guard 3 is the only one that
+// does not depend on Privy echoing our external id back inside linked_accounts.
 func (cli *PrivyClient) CreateUserWallet(privyId string, purpose string) (*data.LinkedAccount, *data.HttpError) {
 	externalID, err := data.WalletExternalID(privyId, purpose)
 	if err != nil {
-		log.Errorf("Create wallet API error: %v", err)
+		log.Errorf("Create wallet API error: purpose %q is not usable for user %s: %v", purpose, privyId, err)
 		return nil, &data.HttpError{
 			Code:    http.StatusBadRequest,
 			Message: data.Message{Message: "purpose is invalid"},
 		}
 	}
 
-	res, _, _ := cli.walletCreateGroup.Do(externalID, func() (interface{}, error) {
+	// Provisioning is rare and each call moves money-bearing state, so it is logged step by
+	// step. The cost of a few lines per call is nothing next to reconstructing, after the
+	// fact, which of Privy's answers the enclave acted on.
+	log.Infof("Wallet provisioning: user %s, purpose %q, external id %s", privyId, purpose, externalID)
+
+	res, _, shared := cli.walletCreateGroup.Do(externalID, func() (interface{}, error) {
 		wallet, httpErr := cli.createWalletForPurpose(privyId, externalID)
 		return walletCreateResult{wallet: wallet, httpErr: httpErr}, nil
 	})
 
+	// Says whether this answer was produced for this caller or collapsed onto another one
+	// already in flight, which is otherwise invisible and is the first thing to know when two
+	// callers disagree about what they got.
+	if shared {
+		log.Infof("Wallet provisioning: external id %s was served by a create shared across concurrent callers", externalID)
+	}
+
 	result := res.(walletCreateResult)
 	if result.httpErr != nil {
+		log.Errorf("Wallet provisioning failed: user %s, purpose %q, external id %s, responding %d %s",
+			privyId, purpose, externalID, result.httpErr.Code, result.httpErr.Message.Message)
 		return nil, result.httpErr
 	}
+
+	log.Infof("Wallet provisioning succeeded: user %s, purpose %q, wallet %s at index %d",
+		privyId, purpose, result.wallet.WalletID, result.wallet.WalletIndex)
 
 	// Hand each collapsed caller its own copy, matching GetUser's semantics.
 	wallet := *result.wallet
@@ -63,18 +82,21 @@ func (cli *PrivyClient) CreateUserWallet(privyId string, purpose string) (*data.
 
 // Runs inside the singleflight critical section for one external id.
 func (cli *PrivyClient) createWalletForPurpose(privyId string, externalID string) (*data.LinkedAccount, *data.HttpError) {
-	// GetUser gives us the current wallet set and, as a side effect, guarantees the user
-	// has a wallet at HD index 0 — which Privy requires before it will create a wallet at
-	// any higher index.
+	// GetUser gives us the current wallet set and, as a side effect, guarantees the user has
+	// a wallet at HD index 0, which is the wallet the rest of the product assumes exists.
 	user, httpErr := cli.GetUser(privyId)
 	if httpErr != nil {
 		return nil, httpErr
 	}
 
 	if existing := user.GetEthDelegatedWalletByExternalID(externalID); existing != nil {
-		log.Infof("User %s already has a wallet for external id %s", privyId, externalID)
+		log.Infof("Wallet provisioning: user %s already holds wallet %s at index %d for external id %s, returning it",
+			privyId, existing.WalletID, existing.WalletIndex, externalID)
 		return existing, nil
 	}
+
+	log.Infof("Wallet provisioning: external id %s is not on user %s's record (accounts %s), asking Privy directly",
+		externalID, privyId, summarizeUserAccounts(user))
 
 	// The check above can only recognise the wallet if Privy echoes our external id back
 	// inside linked_accounts, so it is not enough on its own: when it does not, a user who
@@ -89,112 +111,55 @@ func (cli *PrivyClient) createWalletForPurpose(privyId string, externalID string
 		return existing, nil
 	}
 
-	// Recorded before the create so the new wallet can be told apart from the ones the
-	// response may echo back alongside it.
-	known := knownWalletIDs(user)
+	log.Infof("Wallet provisioning: no wallet exists under external id %s, creating one for user %s", externalID, privyId)
 
-	createResp, httpErr := cli.postCreateWallet(privyId, externalID)
+	wallet, httpErr := cli.postCreateWallet(privyId, externalID)
 	if httpErr != nil {
+		// A failed create does not mean no wallet. The request may have landed and its
+		// response been lost, and Privy caches 4xx and 5xx responses against the idempotency
+		// key and replays them for 24 hours — so this error may be a replay of one already
+		// recovered from. Reporting failure without looking would strand a wallet that
+		// exists, and leave the next call to be answered by the same cached error.
+		log.Warnf("Wallet provisioning: create for user %s failed with %d, checking whether a wallet exists under external id %s anyway",
+			privyId, httpErr.Code, externalID)
+
+		recovered, lookupErr := cli.findWalletByExternalID(privyId, externalID)
+		if lookupErr == nil && recovered != nil {
+			log.Warnf("Wallet provisioning: create for user %s failed but wallet %s exists under external id %s, returning it",
+				privyId, recovered.WalletID, externalID)
+			return recovered, nil
+		}
+
+		if lookupErr != nil {
+			log.Errorf("Wallet provisioning: could not check for a wallet under external id %s after the create failed, reporting the create failure", externalID)
+		} else {
+			log.Errorf("Wallet provisioning: create for user %s failed and no wallet exists under external id %s", privyId, externalID)
+		}
+
 		return nil, httpErr
 	}
 
-	wallet := selectCreatedWallet(createResp.LinkedAccounts, externalID, known)
-	if wallet == nil {
-		// Privy answered 200, so a wallet very likely exists even though the response did
-		// not name it. Failing here is not the transient failure a caller can retry away:
-		// the idempotency key is derived from the external id, so Privy replays this same
-		// response for 24 hours and every retry fails identically, while the wallet it
-		// created sits uncached and unusable.
-		//
-		// The user record is the source of truth for what the user holds, so consult it
-		// before giving up. The summary logged here says which assumption broke: no
-		// accounts at all means the response is not shaped the way we parse it; accounts
-		// carrying no external id means Privy did not echo ours; every id already known
-		// means this was an idempotent replay of an earlier create.
-		log.Warnf("Create wallet: response for user %s did not name the new wallet (response id %q, accounts %s), refetching the user",
-			privyId, createResp.ID, summarizeAccounts(createResp.LinkedAccounts))
-
-		return cli.resolveCreatedWallet(privyId, externalID, known)
-	}
-
-	if httpErr := cli.assertDelegatedEthWallet(wallet, privyId); httpErr != nil {
-		return nil, httpErr
-	}
-
-	// Make the cache consistent with Privy before returning, not after.
-	//
-	// The signing path resolves addresses out of this record, so a caller that provisions a
-	// wallet and immediately signs with it must find it there. Evicting instead would work
-	// too, but it would leave the very next signature to race a refetch; writing the record
-	// back means the wallet is usable the moment this call returns 200.
-	cli.cacheUser(privyId, mergedUser(user, createResp.LinkedAccounts))
-
-	return wallet, nil
+	return cli.accountForWallet(privyId, externalID, wallet)
 }
 
-// Identifies a just-created wallet from Privy's user record rather than from the body of
-// the create response.
+// Turns a Privy wallet into the linked account the rest of the enclave works with, or fails
+// if the wallet is not one Axal can sign for.
 //
-// This is the recovery path for a create that returned 200 without a wallet we could pick
-// out of the response. Privy has been asked to create the wallet and said yes, so the
-// question is no longer whether it exists but what it is, and the user record answers that
-// without depending on the create response echoing anything back.
-//
-// The cached record is dropped first: it was read before the create, so going through it
-// would reproduce the very miss that brought us here.
-func (cli *PrivyClient) resolveCreatedWallet(privyId string, externalID string, known map[string]bool) (*data.LinkedAccount, *data.HttpError) {
-	// Privy knows the wallet by the external id we gave it whether or not it echoed that id
-	// back, so this resolves the case the create response could not: an idempotent replay
-	// of an earlier create, whose wallet is already in `known` and so indistinguishable
-	// from the ones the user held before.
-	if wallet, httpErr := cli.findWalletByExternalID(privyId, externalID); httpErr != nil || wallet != nil {
-		return wallet, httpErr
-	}
-
-	cli.InvalidateUser(privyId)
-
-	user, httpErr := cli.GetUser(privyId)
-	if httpErr != nil {
-		return nil, httpErr
-	}
-
-	accounts := make([]*data.LinkedAccount, 0, len(user.LinkedAccounts))
-	for i := range user.LinkedAccounts {
-		accounts = append(accounts, &user.LinkedAccounts[i])
-	}
-
-	wallet := selectCreatedWallet(accounts, externalID, known)
-	if wallet == nil {
-		log.Errorf("Create wallet API error: created wallet for user %s could not be identified in the response or in the refetched user (accounts %s)",
-			privyId, summarizeAccounts(accounts))
+// Two sources are combined because each is authoritative for a different half of the answer.
+// The wallet object knows which signers are attached; only the user record carries the
+// wallet_index and the delegated flag that the signing path resolves addresses against. So
+// the checks that decide whether the wallet is usable are made against the wallet object,
+// and the record returned comes from the user.
+func (cli *PrivyClient) accountForWallet(privyId string, externalID string, wallet *data.PrivyWallet) (*data.LinkedAccount, *data.HttpError) {
+	// Assert the signer rather than trusting that Privy applied what we asked for. A wallet
+	// without our quorum attached would serve user-initiated signing and fail every
+	// Axal-initiated one — rebalancing and reward claiming — silently, at a time nobody is
+	// watching.
+	signerID := cli.teeConfig.Privy.DelegatedActionsKeyId
+	if !wallet.HasAdditionalSigner(signerID) || wallet.ChainType != "ethereum" {
+		log.Errorf("Create wallet API error: wallet for user %s cannot be signed for by Axal: expected signer %s among %s",
+			privyId, signerID, summarizeWallet(wallet))
 		return nil, cli.createInternalServerError()
-	}
-
-	if httpErr := cli.assertDelegatedEthWallet(wallet, privyId); httpErr != nil {
-		return nil, httpErr
-	}
-
-	// Copied out of the refetched record, whose LinkedAccounts slice shares its backing
-	// array with the cache entry GetUser just wrote.
-	found := *wallet
-
-	// GetUser has already cached this record, so the cache is consistent with what we
-	// return and needs no second write.
-	return &found, nil
-}
-
-// Resolves the user's linked account for the wallet carrying an external id, or nil when
-// Privy holds no wallet under it.
-//
-// Two sources are combined because each is authoritative for a different half of the
-// answer. The wallet endpoint knows which wallet the external id belongs to and which
-// signers are attached to it; only the user record carries the wallet_index and the
-// delegated flag the signing path resolves addresses against. So the external id is turned
-// into an address here, and the address into a linked account.
-func (cli *PrivyClient) findWalletByExternalID(privyId string, externalID string) (*data.LinkedAccount, *data.HttpError) {
-	wallet, httpErr := cli.getWalletByExternalID(externalID)
-	if httpErr != nil || wallet == nil {
-		return nil, httpErr
 	}
 
 	account, httpErr := cli.linkedAccountForAddress(privyId, wallet.Address)
@@ -203,23 +168,29 @@ func (cli *PrivyClient) findWalletByExternalID(privyId string, externalID string
 	}
 
 	if account == nil {
-		// A wallet exists under our external id but the user does not hold it as a
-		// delegated eth wallet, so every Axal-initiated signature for it would be refused.
-		// Creating another one is not the answer — external ids are unique per app, so the
-		// next create would collide on this same wallet — hence an error rather than a
-		// fallthrough. Whether our signer is attached says which side to look at: attached
-		// means Privy is not reporting the wallet as delegated on the user; not attached
-		// means the create did not apply additional_signers at all.
-		log.Errorf("Create wallet API error: wallet %s under external id %s is not a delegated eth wallet on user %s (signer %s attached: %t, chain_type %q)",
-			wallet.ID, externalID, privyId, cli.teeConfig.Privy.DelegatedActionsKeyId,
-			wallet.HasAdditionalSigner(cli.teeConfig.Privy.DelegatedActionsKeyId), wallet.ChainType)
-
+		// Our quorum is attached, so Privy would accept a signature for this wallet, but the
+		// signing path resolves addresses out of the user record and this wallet is not in it
+		// as a delegated eth wallet. Returning it would hand back an address that cannot be
+		// signed for until the record catches up.
+		log.Errorf("Create wallet API error: wallet under external id %s is not listed as a delegated eth wallet on user %s: %s",
+			externalID, privyId, summarizeWallet(wallet))
 		return nil, cli.createInternalServerError()
 	}
 
-	log.Infof("User %s already has wallet %s for external id %s", privyId, wallet.ID, externalID)
+	log.Infof("User %s has wallet %s at index %d for external id %s", privyId, wallet.ID, account.WalletIndex, externalID)
 
 	return account, nil
+}
+
+// Resolves the account for the wallet carrying an external id, or nil when Privy holds no
+// wallet under it.
+func (cli *PrivyClient) findWalletByExternalID(privyId string, externalID string) (*data.LinkedAccount, *data.HttpError) {
+	wallet, httpErr := cli.getWalletByExternalID(externalID)
+	if httpErr != nil || wallet == nil {
+		return nil, httpErr
+	}
+
+	return cli.accountForWallet(privyId, externalID, wallet)
 }
 
 // Fetches the wallet carrying an external id, or nil when Privy holds none.
@@ -249,6 +220,7 @@ func (cli *PrivyClient) getWalletByExternalID(externalID string) (*data.PrivyWal
 	// No wallet under this external id is the expected answer the first time a purpose is
 	// provisioned, not a failure.
 	if res.StatusCode == http.StatusNotFound {
+		log.Infof("Wallet lookup: Privy holds no wallet under external id %s", externalID)
 		return nil, nil
 	}
 
@@ -270,9 +242,11 @@ func (cli *PrivyClient) getWalletByExternalID(externalID string) (*data.PrivyWal
 	}
 
 	if wallet.Address == "" {
-		log.Errorf("Wallet lookup API error: wallet under external id %s came back without an address", externalID)
+		log.Errorf("Wallet lookup API error: wallet under external id %s came back without an address: %s", externalID, summarizeWallet(&wallet))
 		return nil, cli.createInternalServerError()
 	}
+
+	log.Infof("Wallet lookup: external id %s resolves to %s", externalID, summarizeWallet(&wallet))
 
 	return &wallet, nil
 }
@@ -281,9 +255,9 @@ func (cli *PrivyClient) getWalletByExternalID(externalID string) (*data.PrivyWal
 // cached record does not carry it.
 //
 // The refetch is what makes this usable straight after a create: the cached record was read
-// before the wallet existed, so a miss against it is expected rather than conclusive. A
-// miss against a freshly fetched record is conclusive, and the nil it returns means the
-// user genuinely does not hold this wallet as a delegated eth wallet.
+// before the wallet existed, so a miss against it is expected rather than conclusive. A miss
+// against a freshly fetched record is conclusive, and the nil it returns means the user does
+// not hold this wallet as a delegated eth wallet.
 func (cli *PrivyClient) linkedAccountForAddress(privyId string, address string) (*data.LinkedAccount, *data.HttpError) {
 	user, httpErr := cli.GetUser(privyId)
 	if httpErr != nil {
@@ -294,6 +268,8 @@ func (cli *PrivyClient) linkedAccountForAddress(privyId string, address string) 
 		return account, nil
 	}
 
+	log.Infof("Wallet %s is not on the cached record for user %s, refetching from Privy", address, privyId)
+
 	cli.InvalidateUser(privyId)
 
 	user, httpErr = cli.GetUser(privyId)
@@ -301,109 +277,27 @@ func (cli *PrivyClient) linkedAccountForAddress(privyId string, address string) 
 		return nil, httpErr
 	}
 
-	// Copied out of the refetched record, whose LinkedAccounts slice shares its backing
-	// array with the cache entry GetUser just wrote. GetUser has also cached that record,
-	// so the cache is consistent with whatever is returned here.
-	if account := user.GetEthDelegatedWalletByAddress(address); account != nil {
-		found := *account
-		return &found, nil
+	account := user.GetEthDelegatedWalletByAddress(address)
+	if account == nil {
+		log.Warnf("User %s does not hold %s as a delegated eth wallet (accounts %s)", privyId, address, summarizeUserAccounts(user))
+		return nil, nil
 	}
 
-	return nil, nil
+	// GetUser has already cached this record, so the cache is consistent with what is
+	// returned and needs no second write.
+	return account, nil
 }
 
-// Asserts delegation rather than trusting the Privy default. A wallet created without our
-// signer attached would serve user-initiated signing and fail every Axal-initiated one —
-// rebalancing and reward claiming — silently, at a time nobody is watching.
-func (cli *PrivyClient) assertDelegatedEthWallet(wallet *data.LinkedAccount, privyId string) *data.HttpError {
-	if !wallet.Delegated || wallet.ChainType != "ethereum" {
-		log.Errorf("Create wallet API error: wallet created for user %s is not a delegated eth wallet (chain_type %q, delegated %t)",
-			privyId, wallet.ChainType, wallet.Delegated)
-		return cli.createInternalServerError()
-	}
-
-	return nil
-}
-
-// The set of wallet ids a user already holds, used to tell a newly created wallet apart
-// from the ones a response echoes back alongside it.
-func knownWalletIDs(user *data.PrivyUser) map[string]bool {
-	known := make(map[string]bool, len(user.LinkedAccounts))
-	for _, acc := range user.LinkedAccounts {
-		if acc.WalletID != "" {
-			known[acc.WalletID] = true
-		}
-	}
-
-	return known
-}
-
-// Renders the identifying fields of a set of linked accounts for a log line.
+// Creates the wallet at Privy and returns it.
 //
-// Deliberately not the raw response body: linked accounts carry the user's email and
-// wallet addresses, and neither is needed to work out why a wallet could not be identified.
-func summarizeAccounts(accounts []*data.LinkedAccount) string {
-	if len(accounts) == 0 {
-		return "[]"
-	}
+// The wallet is created on the wallet API rather than on the user's own wallets collection:
+// that one only provisions the embedded wallet a user does not yet have, and answers 200
+// without creating anything for a chain type the user already holds — which is silent
+// failure for a second wallet.
+func (cli *PrivyClient) postCreateWallet(privyId string, externalID string) (*data.PrivyWallet, *data.HttpError) {
+	url := fmt.Sprintf("%s%s", cli.baseUrl, CREATE_OWNED_WALLET_PATH.Build())
 
-	parts := make([]string, 0, len(accounts))
-	for _, acc := range accounts {
-		if acc == nil {
-			parts = append(parts, "<nil>")
-			continue
-		}
-
-		parts = append(parts, fmt.Sprintf("{id:%q type:%q chain:%q index:%d delegated:%t external_id:%q}",
-			acc.WalletID, acc.Type, acc.ChainType, acc.WalletIndex, acc.Delegated, acc.ExternalID))
-	}
-
-	return "[" + strings.Join(parts, " ") + "]"
-}
-
-// Returns a copy of the user with the create-wallet response folded in.
-//
-// The copy is not optional. GetUser hands back a shallow copy whose LinkedAccounts slice
-// still shares its backing array with the cached entry, so merging in place would reach
-// through and mutate the cache underneath other readers.
-func mergedUser(user *data.PrivyUser, accounts []*data.LinkedAccount) *data.PrivyUser {
-	updated := *user
-	updated.LinkedAccounts = append([]data.LinkedAccount(nil), user.LinkedAccounts...)
-	mergeLinkedAccounts(&updated, accounts)
-
-	return &updated
-}
-
-// Picks the newly created wallet out of a create-wallet response.
-//
-// Matching on external id is exact and preferred. Privy does not necessarily echo every
-// field back, so the fallback is the delegated eth wallet the user did not already hold,
-// which is unambiguous because this call creates exactly one.
-func selectCreatedWallet(accounts []*data.LinkedAccount, externalID string, known map[string]bool) *data.LinkedAccount {
-	for _, acc := range accounts {
-		if acc != nil && acc.ExternalID != "" && acc.ExternalID == externalID {
-			return acc
-		}
-	}
-
-	for _, acc := range accounts {
-		if acc == nil || known[acc.WalletID] {
-			continue
-		}
-		if acc.Delegated && acc.ChainType == "ethereum" {
-			return acc
-		}
-	}
-
-	return nil
-}
-
-// Posts the create-wallet call to Privy, carrying the external id and a deterministic
-// idempotency key so a retried request cannot become a second wallet.
-func (cli *PrivyClient) postCreateWallet(privyId string, externalID string) (*data.CreateWalletResponse, *data.HttpError) {
-	url := fmt.Sprintf("%s%s", cli.baseUrl, CREATE_WALLET_PATH.Build(privyId))
-
-	walletCreateReq := data.NewCreateEthWalletRequestWithExternalID(cli.teeConfig.Privy.DelegatedActionsKeyId, externalID)
+	walletCreateReq := data.NewCreateDelegatedEthWalletRequest(privyId, cli.teeConfig.Privy.DelegatedActionsKeyId, externalID)
 
 	requestBody, err := json.Marshal(walletCreateReq)
 	if err != nil {
@@ -417,11 +311,17 @@ func (cli *PrivyClient) postCreateWallet(privyId string, externalID string) (*da
 		return nil, cli.createInternalServerError()
 	}
 
+	// The request carries no secret: a chain type, an external id, the user's DID and the
+	// signer's key quorum id, which is a public identifier and not a key. Logging it is what
+	// makes a 4xx answerable — the rejection is almost always about a field in here.
+	log.Infof("Wallet create: POST %s %s", url, string(requestBody))
+
 	cli.addStandardPrivyHeaders(req)
 
 	// Derived from the external id, so it is the same key every time this wallet is
-	// requested. Privy holds idempotency records for 24 hours, which covers the retry
-	// window our own guards cannot see.
+	// requested. Privy holds idempotency records for 24 hours, which covers the retry window
+	// our own guards cannot see. It is not the last line of defence — the external id is
+	// unique per app, so a duplicate create collides there even once this record has expired.
 	req.Header.Add("privy-idempotency-key", "wallet-create:"+externalID)
 
 	res, err := cli.client.Do(req)
@@ -443,11 +343,53 @@ func (cli *PrivyClient) postCreateWallet(privyId string, externalID string) (*da
 		return nil, cli.createInternalServerError()
 	}
 
-	var createWalletResp data.CreateWalletResponse
-	if err := json.Unmarshal(body, &createWalletResp); err != nil {
+	var wallet data.PrivyWallet
+	if err := json.Unmarshal(body, &wallet); err != nil {
 		log.Errorf("unable to unmarshal create wallet response: %v", err)
 		return nil, cli.createInternalServerError()
 	}
 
-	return &createWalletResp, nil
+	if wallet.ID == "" || wallet.Address == "" {
+		log.Errorf("Create wallet API error: created wallet for user %s came back without an id or address: %s", privyId, string(body))
+		return nil, cli.createInternalServerError()
+	}
+
+	log.Infof("Wallet create: Privy created %s for user %s", summarizeWallet(&wallet), privyId)
+
+	return &wallet, nil
+}
+
+// Renders a Privy wallet for a log line: what it is, who owns it, and who may sign for it.
+//
+// The signer list is the point. Whether our key quorum is attached is the difference between
+// a wallet Axal can rebalance from and one only its user can ever move, and it is not
+// visible anywhere else in the logs.
+func summarizeWallet(wallet *data.PrivyWallet) string {
+	signers := make([]string, 0, len(wallet.AdditionalSigners))
+	for _, signer := range wallet.AdditionalSigners {
+		if signer != nil {
+			signers = append(signers, signer.SignerID)
+		}
+	}
+
+	return fmt.Sprintf("{id:%q address:%q chain:%q external_id:%q owner_id:%q signers:[%s]}",
+		wallet.ID, wallet.Address, wallet.ChainType, wallet.ExternalID, wallet.OwnerID, strings.Join(signers, " "))
+}
+
+// Renders the identifying fields of a user's linked accounts for a log line.
+//
+// Deliberately not the raw record: linked accounts carry the user's email and wallet
+// addresses, and neither is needed to work out why a wallet was not found on the user.
+func summarizeUserAccounts(user *data.PrivyUser) string {
+	if len(user.LinkedAccounts) == 0 {
+		return "[]"
+	}
+
+	parts := make([]string, 0, len(user.LinkedAccounts))
+	for _, acc := range user.LinkedAccounts {
+		parts = append(parts, fmt.Sprintf("{id:%q type:%q chain:%q index:%d delegated:%t external_id:%q}",
+			acc.WalletID, acc.Type, acc.ChainType, acc.WalletIndex, acc.Delegated, acc.ExternalID))
+	}
+
+	return "[" + strings.Join(parts, " ") + "]"
 }
