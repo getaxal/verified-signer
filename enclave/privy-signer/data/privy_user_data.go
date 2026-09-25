@@ -219,6 +219,11 @@ func NewCreateDelegatedEthWalletRequest(privyId string, delegatedSignerId string
 	}
 }
 
+// WalletByAddressRequest looks a wallet up by its address.
+type WalletByAddressRequest struct {
+	Address string `json:"address"`
+}
+
 // PrivyWallet is the wallet object Privy's wallet endpoints return.
 //
 // It is not a linked_accounts entry and the two are not interchangeable. This carries the

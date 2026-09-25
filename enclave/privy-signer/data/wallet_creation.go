@@ -59,3 +59,30 @@ func WalletExternalID(privyId string, purpose string) (string, error) {
 
 	return externalID, nil
 }
+
+// Reports whether an external id is one this enclave would have assigned to the given user.
+//
+// This is an ownership check, not a formatting check. A wallet created on Privy's wallet API
+// is owned by a key quorum and does not appear among the user's linked accounts, so the
+// record that usually proves "this wallet is theirs" is not available for one. The external
+// id stands in for it: the enclave is what assigns it, it is derived from the user's own DID
+// subject, and Privy holds external ids unique per app and write-once — so a wallet carrying
+// this user's id was provisioned for this user and cannot have been taken over by another.
+//
+// The purpose is round-tripped through WalletExternalID rather than compared by prefix, so
+// there is one definition of the mapping and no way for a crafted id to satisfy a looser
+// version of it.
+func ExternalIDBelongsToUser(externalID string, privyId string) bool {
+	if externalID == "" {
+		return false
+	}
+
+	subject := privyId[strings.LastIndex(privyId, ":")+1:]
+	if !strings.HasPrefix(externalID, subject+"-") {
+		return false
+	}
+
+	expected, err := WalletExternalID(privyId, strings.TrimPrefix(externalID, subject+"-"))
+
+	return err == nil && expected == externalID
+}
