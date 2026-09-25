@@ -70,18 +70,39 @@ func (cli *PrivyClient) resolveDelegatedWallet(privyId string, walletAddress str
 		return nil, httpErr
 	}
 
-	wallet := user.GetEthDelegatedWalletByAddress(walletAddress)
-	if wallet == nil || wallet.WalletID == "" {
-		log.Errorf("Signing API error: requested wallet is not a delegated eth wallet of user %s", privyId)
-		return nil, &data.HttpError{
-			Code: http.StatusBadRequest,
-			Message: data.Message{
-				Message: "requested wallet is not a delegated eth wallet for this user",
-			},
+	if wallet := user.GetEthDelegatedWalletByAddress(walletAddress); wallet != nil && wallet.WalletID != "" {
+		return wallet, nil
+	}
+
+	// A purpose-built wallet is owned by a key quorum and is not among the user's linked
+	// accounts, so the record cannot name it however fresh it is. The address is resolved at
+	// Privy instead, and the ownership check the record would have provided is re-established
+	// from the wallet's external id, which this enclave assigns from the user's own DID subject.
+	log.Infof("Wallet %s is not on the record for user %s, resolving it at Privy", walletAddress, privyId)
+
+	privyWallet, httpErr := cli.getWalletByAddress(walletAddress)
+	if httpErr != nil {
+		return nil, httpErr
+	}
+
+	if privyWallet != nil {
+		if account := cli.signableAccountForWallet(privyId, privyWallet); account != nil {
+			// Fold it into the cached record so the next signature for this wallet resolves
+			// without the lookup.
+			cli.cacheUser(privyId, mergedUser(user, []*data.LinkedAccount{account}))
+
+			return account, nil
 		}
 	}
 
-	return wallet, nil
+	log.Errorf("Signing API error: requested wallet is not a delegated eth wallet of user %s", privyId)
+
+	return nil, &data.HttpError{
+		Code: http.StatusBadRequest,
+		Message: data.Message{
+			Message: "requested wallet is not a delegated eth wallet for this user",
+		},
+	}
 }
 
 // Generic function to handle HTTP requests and responses for signing requests. The

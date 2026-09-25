@@ -197,10 +197,40 @@ theirs and appears on their account, while the quorum is what authorises Axal-in
 signing on `POST /v1/wallets/{id}/rpc`. Passing the quorum as `owner_id` instead would take
 the wallet away from the user.
 
-Two assertions guard the response. Axal's quorum must be among the created wallet's
-`additional_signers`, and the wallet must appear on the user as a `delegated` `ethereum`
-account — the first is what lets the enclave sign, the second is what lets it resolve the
-address to sign with.
+### These wallets are not in `linked_accounts`
+
+Privy answers the create with `owner_id` set to a key quorum derived from `owner.user_id`, and
+the wallet is owned by that quorum rather than linked to the user like their wallet at index 0.
+It does not appear on `GET /v1/users/{id}`.
+
+So **`wallet_index` is not meaningful for a purpose wallet.** It is present because the
+response shape is shared with `linked_accounts` entries, and it is `0` — do not read it as
+"this is wallet 0". Identify these wallets by `id`, `address`, or `external_id`.
+
+`delegated: true` in the response is asserted, not copied: Privy reports no `delegated` flag
+for a quorum-owned wallet, and what the flag means throughout the enclave is "Axal can sign
+for this".
+
+### Signing with one
+
+`POST /api/v1/user/sign/*` names a wallet by address. Because a purpose wallet is absent from
+the user record, an address that is not found there is resolved at Privy with
+`POST /v1/wallets/address`, and the resolved wallet is cached on the user so the next signature
+for it is a cache hit. Wallet 0 still resolves from the record with no lookup.
+
+Resolving by address means an authenticated user can name any address in the app, so two
+assertions guard every wallet — the same two at provisioning and at signing:
+
+| Assertion | Without it |
+|---|---|
+| Axal's quorum is among the wallet's `additional_signers`, on `ethereum` | The wallet serves user-initiated signing and fails every Axal-initiated one, silently |
+| `external_id` is one this enclave assigned to this user | An authenticated user could name any address in the app and be signed for |
+
+The second is the ownership check. The enclave assigns `external_id` as
+`<privy DID subject>-<purpose>` and Privy holds external IDs unique per app and write-once, so
+an id carrying this user's subject means this enclave provisioned that wallet for them. The
+purpose is round-tripped through the same derivation rather than prefix-matched, so a crafted
+id cannot satisfy a looser version of the rule.
 
 The wallet is also written into the user cache before this call returns, so a caller that
 provisions a wallet and immediately signs with it will find it.

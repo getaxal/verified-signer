@@ -136,3 +136,54 @@ func TestWalletIndexZeroIsSerialized(t *testing.T) {
 		t.Errorf("delegated missing: %s", b)
 	}
 }
+
+// ExternalIDBelongsToUser is an ownership check, so its failures matter more than its
+// successes: a quorum-owned wallet is absent from the user's linked accounts, and this is what
+// stands in for the record that would otherwise prove the wallet is theirs.
+func TestExternalIDBelongsToUser(t *testing.T) {
+	const privyId = "did:privy:cm00000000000000000001"
+
+	tests := map[string]struct {
+		externalID string
+		want       bool
+	}{
+		"the id this enclave assigns":          {"cm00000000000000000001-wealth_plan", true},
+		"another purpose for this user":        {"cm00000000000000000001-savings", true},
+		"another user's subject":               {"cm00000000000000000002-wealth_plan", false},
+		"this subject inside a longer one":     {"xcm00000000000000000001-wealth_plan", false},
+		"the subject with no purpose":          {"cm00000000000000000001-", false},
+		"the subject alone":                    {"cm00000000000000000001", false},
+		"a purpose that is not one we mint":    {"cm00000000000000000001-Wealth_Plan", false},
+		"a purpose with a dot":                 {"cm00000000000000000001-wealth.plan", false},
+		"empty":                                {"", false},
+		"the full did rather than the subject": {"did:privy:cm00000000000000000001-wealth_plan", false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := ExternalIDBelongsToUser(tc.externalID, privyId); got != tc.want {
+				t.Errorf("ExternalIDBelongsToUser(%q, %q) = %t, want %t", tc.externalID, privyId, got, tc.want)
+			}
+		})
+	}
+}
+
+// Every id the enclave mints must satisfy the check that later reads it back, or a wallet it
+// provisioned would become unusable the moment signing tried to verify ownership.
+func TestExternalIDBelongsToUser_AcceptsEveryIDWeMint(t *testing.T) {
+	for _, privyId := range []string{
+		"did:privy:cm00000000000000000001",
+		"did:privy:cmdj1wama016kl10j78iaj1bq",
+	} {
+		for _, purpose := range []string{"wealth_plan", "savings", "a", "long-purpose-name_2"} {
+			externalID, err := WalletExternalID(privyId, purpose)
+			if err != nil {
+				t.Fatalf("WalletExternalID(%q, %q) error = %v", privyId, purpose, err)
+			}
+
+			if !ExternalIDBelongsToUser(externalID, privyId) {
+				t.Errorf("ExternalIDBelongsToUser(%q, %q) = false, want true", externalID, privyId)
+			}
+		}
+	}
+}

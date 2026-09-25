@@ -119,6 +119,28 @@ func newResolveClient(t *testing.T, state *resolveServer) *PrivyClient {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(b)
 
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/wallets/address":
+			atomic.AddInt64(&state.lookupCount, 1)
+
+			if lookupStatus != 0 {
+				w.WriteHeader(lookupStatus)
+				_, _ = w.Write([]byte(`{"error":"wallet lookup failed"}`))
+				return
+			}
+
+			var body data.WalletByAddressRequest
+			_ = json.NewDecoder(r.Body).Decode(&body)
+
+			if wallet == nil || !strings.EqualFold(body.Address, wallet.Address) {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"wallet not found"}`))
+				return
+			}
+
+			b, _ := json.Marshal(wallet)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(b)
+
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/wallets/"):
 			atomic.AddInt64(&state.lookupCount, 1)
 
@@ -174,11 +196,12 @@ func newResolveClient(t *testing.T, state *resolveServer) *PrivyClient {
 	}
 }
 
-// The lookup by external id resolves the wallet even when the user record does not carry the
-// external id at all — which is the whole reason the lookup exists.
-func TestFindWalletByExternalID_ResolvesWithoutTheEchoedExternalID(t *testing.T) {
+// The lookup by external id resolves the wallet without the user record being involved at all.
+// A purpose wallet is owned by a key quorum and never appears among the user's linked accounts,
+// so the wallet object has to be able to carry the whole answer.
+func TestFindWalletByExternalID_ResolvesFromTheWalletAlone(t *testing.T) {
 	state := &resolveServer{
-		accounts: []data.LinkedAccount{walletZeroAccount(), walletOneAccount("")},
+		accounts: []data.LinkedAccount{walletZeroAccount()},
 		wallet:   walletOneObject(),
 	}
 	cli := newResolveClient(t, state)
@@ -191,17 +214,24 @@ func TestFindWalletByExternalID_ResolvesWithoutTheEchoedExternalID(t *testing.T)
 		t.Fatal("findWalletByExternalID() = nil, want the wallet Privy holds under the external id")
 	}
 
+	if wallet.WalletID != "w1" {
+		t.Errorf("WalletID = %q, want w1 — the id is what signing addresses", wallet.WalletID)
+	}
 	if wallet.Address != walletOneAddr {
 		t.Errorf("Address = %s, want %s", wallet.Address, walletOneAddr)
 	}
-
-	// Both fields come from the user record rather than the wallet object, which carries
-	// neither. Losing them would make the wallet unsignable and misreport its index.
-	if !wallet.Delegated {
-		t.Error("resolved wallet is not delegated, so Axal could not sign with it")
+	if wallet.ExternalID != resolveExternalID {
+		t.Errorf("ExternalID = %q, want %q", wallet.ExternalID, resolveExternalID)
 	}
-	if wallet.WalletIndex != 1 {
-		t.Errorf("WalletIndex = %d, want 1", wallet.WalletIndex)
+
+	// Set from the attached quorum rather than copied from Privy, which reports no delegated
+	// flag for a quorum-owned wallet. Everything downstream reads this as "Axal can sign".
+	if !wallet.Delegated {
+		t.Error("resolved wallet is not marked delegated, so the signing path would refuse it")
+	}
+
+	if got := atomic.LoadInt64(&state.getCount); got != 0 {
+		t.Errorf("user fetches = %d, want 0: the wallet object is the whole source of truth", got)
 	}
 }
 
@@ -235,139 +265,6 @@ func TestFindWalletByExternalID_PropagatesALookupFailure(t *testing.T) {
 	}
 	if got := atomic.LoadInt64(&state.getCount); got != 0 {
 		t.Errorf("user fetches = %d, want 0: a failed lookup must not be answered by guessing from the user record", got)
-	}
-}
-
-// Straight after a create the cached record predates the wallet, so a miss against it is
-// expected rather than conclusive and has to be answered from Privy.
-func TestFindWalletByExternalID_RefetchesWhenTheCachedRecordPredatesTheWallet(t *testing.T) {
-	state := &resolveServer{accounts: []data.LinkedAccount{walletZeroAccount()}}
-	cli := newResolveClient(t, state)
-
-	// Warm the cache with the pre-create record, as the create path itself does.
-	if _, httpErr := cli.GetUser(walletTestPrivyID); httpErr != nil {
-		t.Fatalf("GetUser() error = %+v", httpErr)
-	}
-
-	// The create lands: the wallet now exists and the user record carries it.
-	state.setAccounts([]data.LinkedAccount{walletZeroAccount(), walletOneAccount("")})
-	state.setWallet(walletOneObject())
-
-	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
-	if httpErr != nil {
-		t.Fatalf("findWalletByExternalID() error = %+v", httpErr)
-	}
-
-	if wallet.Address != walletOneAddr {
-		t.Errorf("Address = %s, want %s — the stale cached record was served instead of a refetch", wallet.Address, walletOneAddr)
-	}
-	if got := atomic.LoadInt64(&state.getCount); got != 2 {
-		t.Errorf("user fetches = %d, want 2 (the warm-up and the refetch)", got)
-	}
-}
-
-// The record the caller gets back is also the record the next signature resolves against, so
-// resolving has to leave the cache agreeing with Privy.
-func TestFindWalletByExternalID_LeavesTheCacheConsistent(t *testing.T) {
-	state := &resolveServer{
-		accounts: []data.LinkedAccount{walletZeroAccount(), walletOneAccount("")},
-		wallet:   walletOneObject(),
-	}
-	cli := newResolveClient(t, state)
-
-	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
-	if httpErr != nil {
-		t.Fatalf("findWalletByExternalID() error = %+v", httpErr)
-	}
-
-	item := cli.userCache.Get(walletTestPrivyID)
-	if item == nil {
-		t.Fatal("user record is not cached after resolving a wallet")
-	}
-
-	cached := item.Value()
-	if cached.GetEthDelegatedWalletByAddress(wallet.Address) == nil {
-		t.Error("the resolved wallet is missing from the cached user record")
-	}
-	if cached.GetEthDelegatedWalletByAddress(walletZeroAddr) == nil {
-		t.Error("wallet 0 was lost from the cached user record")
-	}
-}
-
-// The account handed back is a copy. It is read out of a record whose LinkedAccounts slice
-// shares its backing array with the cache entry, so returning a pointer into it would let any
-// caller reach through and rewrite what every later signature resolves.
-func TestFindWalletByExternalID_ReturnsACopyOfTheCachedAccount(t *testing.T) {
-	state := &resolveServer{
-		accounts: []data.LinkedAccount{walletZeroAccount(), walletOneAccount("")},
-		wallet:   walletOneObject(),
-	}
-	cli := newResolveClient(t, state)
-
-	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
-	if httpErr != nil {
-		t.Fatalf("findWalletByExternalID() error = %+v", httpErr)
-	}
-
-	wallet.Address = "0xdead000000000000000000000000000000000000"
-
-	cached := cli.userCache.Get(walletTestPrivyID).Value()
-	if cached.GetEthDelegatedWalletByAddress(walletOneAddr) == nil {
-		t.Error("mutating the returned wallet rewrote the cached user record")
-	}
-}
-
-// A wallet Privy holds but does not list on the user is not usable: the signing path resolves
-// addresses out of the user record, so returning it would hand back an address no signature
-// could reach.
-func TestFindWalletByExternalID_FailsWhenTheWalletIsNotOnTheUser(t *testing.T) {
-	state := &resolveServer{
-		accounts: []data.LinkedAccount{walletZeroAccount()},
-		wallet:   walletOneObject(),
-	}
-	cli := newResolveClient(t, state)
-
-	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
-	if httpErr == nil {
-		t.Fatalf("findWalletByExternalID() returned wallet %+v, want an error", wallet)
-	}
-	if httpErr.Code != http.StatusInternalServerError {
-		t.Errorf("Code = %d, want 500", httpErr.Code)
-	}
-}
-
-// Same wallet, listed on the user but not delegated. Axal-initiated signing would be refused
-// for it, so it is rejected rather than returned.
-func TestFindWalletByExternalID_FailsWhenTheUserWalletIsNotDelegated(t *testing.T) {
-	undelegated := walletOneAccount(resolveExternalID)
-	undelegated.Delegated = false
-
-	state := &resolveServer{
-		accounts: []data.LinkedAccount{walletZeroAccount(), undelegated},
-		wallet:   walletOneObject(),
-	}
-	cli := newResolveClient(t, state)
-
-	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
-	if httpErr == nil {
-		t.Fatalf("findWalletByExternalID() returned undelegated wallet %+v, want an error", wallet)
-	}
-	if httpErr.Code != http.StatusInternalServerError {
-		t.Errorf("Code = %d, want 500", httpErr.Code)
-	}
-}
-
-// The user record is the last source of truth, so its failure is the call's failure.
-func TestFindWalletByExternalID_PropagatesAUserFetchFailure(t *testing.T) {
-	state := &resolveServer{
-		wallet:     walletOneObject(),
-		userStatus: http.StatusInternalServerError,
-	}
-	cli := newResolveClient(t, state)
-
-	wallet, httpErr := cli.findWalletByExternalID(walletTestPrivyID, resolveExternalID)
-	if httpErr == nil {
-		t.Fatalf("findWalletByExternalID() returned wallet %+v, want the user fetch failure", wallet)
 	}
 }
 
@@ -414,5 +311,141 @@ func TestAccountForWallet_RejectsANonEthereumWallet(t *testing.T) {
 	account, httpErr := cli.accountForWallet(walletTestPrivyID, resolveExternalID, wallet)
 	if httpErr == nil {
 		t.Fatalf("accountForWallet() returned %+v, want a non-ethereum wallet to be rejected", account)
+	}
+}
+
+// A purpose wallet has to be signable, which means the signing path must resolve an address
+// that is nowhere on the user's record. Provisioning one and then being unable to sign with it
+// would make the whole feature inert.
+func TestResolveDelegatedWallet_ResolvesAPurposeWalletByAddress(t *testing.T) {
+	state := &resolveServer{
+		accounts: []data.LinkedAccount{walletZeroAccount()},
+		wallet:   walletOneObject(),
+	}
+	cli := newResolveClient(t, state)
+
+	account, httpErr := cli.resolveDelegatedWallet(walletTestPrivyID, walletOneAddr)
+	if httpErr != nil {
+		t.Fatalf("resolveDelegatedWallet() error = %+v", httpErr)
+	}
+
+	// The wallet id is what the signing request is actually addressed to.
+	if account.WalletID != "w1" {
+		t.Errorf("WalletID = %q, want w1", account.WalletID)
+	}
+}
+
+// The ownership check, and the reason the external id is checked rather than trusted. Resolving
+// by address means an authenticated user can name any address in the app, so a wallet
+// provisioned for someone else must be refused even though Privy resolves it happily and our
+// own quorum is attached to it.
+func TestResolveDelegatedWallet_RefusesAWalletProvisionedForAnotherUser(t *testing.T) {
+	someoneElses := walletOneObject()
+	someoneElses.ExternalID = "cm00000000000000000002-" + wealthPurpose
+
+	state := &resolveServer{
+		accounts: []data.LinkedAccount{walletZeroAccount()},
+		wallet:   someoneElses,
+	}
+	cli := newResolveClient(t, state)
+
+	account, httpErr := cli.resolveDelegatedWallet(walletTestPrivyID, walletOneAddr)
+	if httpErr == nil {
+		t.Fatalf("resolveDelegatedWallet() returned another user's wallet %+v, want a refusal", account)
+	}
+	if httpErr.Code != http.StatusBadRequest {
+		t.Errorf("Code = %d, want 400", httpErr.Code)
+	}
+}
+
+// A wallet with no external id at all is equally unattributable, and an app wallet that belongs
+// to no user must not become signable just because it exists.
+func TestResolveDelegatedWallet_RefusesAWalletWithNoExternalID(t *testing.T) {
+	unattributed := walletOneObject()
+	unattributed.ExternalID = ""
+
+	state := &resolveServer{
+		accounts: []data.LinkedAccount{walletZeroAccount()},
+		wallet:   unattributed,
+	}
+	cli := newResolveClient(t, state)
+
+	account, httpErr := cli.resolveDelegatedWallet(walletTestPrivyID, walletOneAddr)
+	if httpErr == nil {
+		t.Fatalf("resolveDelegatedWallet() returned unattributed wallet %+v, want a refusal", account)
+	}
+}
+
+// Axal's quorum has to be attached, or the signature Privy is asked for would be refused there
+// instead — after the enclave had already committed to the wallet.
+func TestResolveDelegatedWallet_RefusesAWalletWithoutAxalsSigner(t *testing.T) {
+	unsignable := walletOneObject()
+	unsignable.AdditionalSigners = nil
+
+	state := &resolveServer{
+		accounts: []data.LinkedAccount{walletZeroAccount()},
+		wallet:   unsignable,
+	}
+	cli := newResolveClient(t, state)
+
+	account, httpErr := cli.resolveDelegatedWallet(walletTestPrivyID, walletOneAddr)
+	if httpErr == nil {
+		t.Fatalf("resolveDelegatedWallet() returned unsignable wallet %+v, want a refusal", account)
+	}
+}
+
+// An address Privy does not know is refused rather than guessed at.
+func TestResolveDelegatedWallet_RefusesAnUnknownAddress(t *testing.T) {
+	state := &resolveServer{accounts: []data.LinkedAccount{walletZeroAccount()}}
+	cli := newResolveClient(t, state)
+
+	account, httpErr := cli.resolveDelegatedWallet(walletTestPrivyID, walletOneAddr)
+	if httpErr == nil {
+		t.Fatalf("resolveDelegatedWallet() returned %+v for an address Privy does not hold, want a refusal", account)
+	}
+	if httpErr.Code != http.StatusBadRequest {
+		t.Errorf("Code = %d, want 400", httpErr.Code)
+	}
+}
+
+// Signing is the hot path, so a resolved wallet is folded into the cached record: the second
+// signature for the same wallet must not pay another lookup.
+func TestResolveDelegatedWallet_CachesTheResolvedWallet(t *testing.T) {
+	state := &resolveServer{
+		accounts: []data.LinkedAccount{walletZeroAccount()},
+		wallet:   walletOneObject(),
+	}
+	cli := newResolveClient(t, state)
+
+	if _, httpErr := cli.resolveDelegatedWallet(walletTestPrivyID, walletOneAddr); httpErr != nil {
+		t.Fatalf("first resolveDelegatedWallet() error = %+v", httpErr)
+	}
+	lookups := atomic.LoadInt64(&state.lookupCount)
+
+	if _, httpErr := cli.resolveDelegatedWallet(walletTestPrivyID, walletOneAddr); httpErr != nil {
+		t.Fatalf("second resolveDelegatedWallet() error = %+v", httpErr)
+	}
+
+	if got := atomic.LoadInt64(&state.lookupCount); got != lookups {
+		t.Errorf("wallet lookups = %d, want %d: the resolved wallet was not cached", got, lookups)
+	}
+}
+
+// The user's own embedded wallet is still resolved straight from the record. It is the common
+// case and must not start costing a wallet lookup.
+func TestResolveDelegatedWallet_ResolvesWalletZeroWithoutALookup(t *testing.T) {
+	state := &resolveServer{accounts: []data.LinkedAccount{walletZeroAccount()}}
+	cli := newResolveClient(t, state)
+
+	account, httpErr := cli.resolveDelegatedWallet(walletTestPrivyID, walletZeroAddr)
+	if httpErr != nil {
+		t.Fatalf("resolveDelegatedWallet() error = %+v", httpErr)
+	}
+	if account.WalletID != "w0" {
+		t.Errorf("WalletID = %q, want w0", account.WalletID)
+	}
+
+	if got := atomic.LoadInt64(&state.lookupCount); got != 0 {
+		t.Errorf("wallet lookups = %d, want 0 for a wallet already on the record", got)
 	}
 }

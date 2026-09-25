@@ -102,14 +102,38 @@ made sits there. So a create error is never reported before guard 3 has been ask
 whether a wallet exists — the external ID, not the idempotency key, is the durable
 duplicate guard.
 
-Two things are asserted before a wallet is returned, because each covers a different
-failure. Axal's key quorum must be among the wallet's `additional_signers` — that is what
-`POST /v1/wallets/{id}/rpc` checks, so a wallet without it would serve user-initiated
-signing and fail every Axal-initiated one, silently. And the wallet must appear on the
-user as a `delegated` `ethereum` account, because the signing path resolves addresses out
-of that record; a wallet missing from it is an address no signature could reach. The
-record is fetched past the cache when needed, so the wallet is resolvable by the very
-next signature rather than after the cache TTL.
+**These wallets are not embedded HD wallets, and they are not in `linked_accounts`.**
+Privy answers the create with `owner_id` set to a key quorum it derived from the
+`owner.user_id` we sent, and the wallet is owned by that quorum rather than linked to the
+user the way their wallet at index 0 is. It does not appear on `GET /v1/users/{id}` at all.
+Two consequences, both load bearing:
+
+- **`wallet_index` is not meaningful for a purpose wallet.** Only the user's embedded
+  wallet has an HD index. The field is present in the response because the shape is shared
+  with `linked_accounts` entries, and it is zero — do not read it as "this is wallet 0".
+- **Signing cannot resolve these wallets from the user record**, so it resolves the address
+  at Privy with `POST /v1/wallets/address` and falls back to that whenever an address is
+  not on the record. The resolved wallet is folded into the cached record, so the next
+  signature for it is a cache hit.
+
+That second point moves the ownership check, which is the part to be careful about.
+Resolving by address means an authenticated user can name any address in the app, and the
+user record — which used to be the proof that a wallet was theirs — cannot speak for a
+quorum-owned wallet. The `external_id` stands in for it: the enclave assigns it as
+`<privy DID subject>-<purpose>`, Privy holds external IDs unique per app and write-once, so
+an id carrying this user's subject means this enclave provisioned that wallet for them and
+no one else can have claimed it. The purpose is round-tripped back through the same
+derivation rather than prefix-matched, so there is one definition of the mapping.
+
+Two things are therefore asserted before any wallet is returned or signed with, and they
+are the same two in both paths, from one function:
+
+1. **Axal's key quorum is among the wallet's `additional_signers`, on `ethereum`.** This is
+   what `POST /v1/wallets/{id}/rpc` checks, so without it the wallet serves user-initiated
+   signing and fails every Axal-initiated one — rebalancing, reward claiming — silently, at
+   a time nobody is watching.
+2. **The `external_id` is one this enclave assigned to this user.** Without it, an
+   authenticated user could name any address in the app and be signed for.
 
 ### Ethereum Signing
 - **POST** `/api/v1/user/signer/eth/secp256k1Sign` - User-authenticated raw-hash signature generation
