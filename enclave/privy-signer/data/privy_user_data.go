@@ -219,6 +219,12 @@ func NewCreateDelegatedEthWalletRequest(privyId string, delegatedSignerId string
 	}
 }
 
+// WalletListResponse is a page of Privy's wallets collection.
+type WalletListResponse struct {
+	Data       []*PrivyWallet `json:"data"`
+	NextCursor string         `json:"next_cursor,omitempty"`
+}
+
 // PrivyWallet is the wallet object Privy's wallet endpoints return.
 //
 // It is not a linked_accounts entry and the two are not interchangeable. This carries the

@@ -197,10 +197,49 @@ theirs and appears on their account, while the quorum is what authorises Axal-in
 signing on `POST /v1/wallets/{id}/rpc`. Passing the quorum as `owner_id` instead would take
 the wallet away from the user.
 
-Two assertions guard the response. Axal's quorum must be among the created wallet's
-`additional_signers`, and the wallet must appear on the user as a `delegated` `ethereum`
-account — the first is what lets the enclave sign, the second is what lets it resolve the
-address to sign with.
+### These are real embedded wallets
+
+The created wallet lands on the user's record at the next HD index, with
+`delegated: true`, `connector_type: "embedded"` and `user_can_sign: true` — the same shape as
+their wallet at index 0. `owner_id` is a key quorum Privy derives from `owner.user_id`, and it
+is the same quorum that owns wallet 0. The user holds the wallet, sees it through their client
+SDK and can sign with it; Axal can sign through the attached quorum.
+
+`wallet_index` and `delegated` come from `linked_accounts`, since a wallet object carries
+neither. **That read is eventually consistent** — usually immediate, but observed to lag past
+the end of the request that created the wallet. When it lags, the response carries
+`wallet_index: -1`, meaning "this wallet has an index, but the record had not supplied it yet".
+It is never `0`, which would name the user's primary wallet. Identify a wallet by `id`,
+`address` or `external_id`, not by index.
+
+`external_id` is **not** echoed inside `linked_accounts`, so the response carries it over from
+the wallet object.
+### Signing with one
+
+`POST /api/v1/user/sign/*` names a wallet by address. Because a purpose wallet is absent from
+the user record, an address that is not found there is resolved with
+`GET /v1/wallets?user_id=<privy id>&address=<address>`, and the resolved wallet is cached on the
+user so the next signature for it is a cache hit. Wallet 0 still resolves from the record with
+no lookup.
+
+That query is also the **ownership check**, and scoping it to `user_id` is the whole point.
+Resolving by address means an authenticated user can name any address in the app, so whose
+wallet it is must be answered by Privy's own ownership graph — the wallet's owner quorum
+resolving to this user — rather than inferred. The returned address is re-checked against the
+one asked for, so a widened filter cannot substitute a different wallet.
+
+Three assertions guard every wallet that is returned or signed with:
+
+| Assertion | Without it |
+|---|---|
+| Privy lists the wallet under this `user_id` | An authenticated user could name any address in the app and be signed for |
+| Axal's quorum is among its `additional_signers`, on `ethereum` | The wallet serves user-initiated signing and fails every Axal-initiated one, silently |
+| If it carries an `external_id`, that id is one this enclave assigned to **this** user | Another user's purpose wallet would be accepted if the ownership filter ever widened |
+
+The third is deliberately conditional. Wallet 0 carries no `external_id`, so requiring one would
+refuse the user's own wallet whenever it had to be resolved this way. Provisioning applies the
+stronger form — the id must be present and must be this user's — because it derives that id
+from the authenticated user before asking Privy for anything.
 
 The wallet is also written into the user cache before this call returns, so a caller that
 provisions a wallet and immediately signs with it will find it.

@@ -272,8 +272,11 @@ func TestCreateUserWallet_ReturnsADelegatedEthWallet(t *testing.T) {
 	if wallet.Address == walletZeroAddr {
 		t.Error("returned wallet 0 instead of the newly created wallet")
 	}
-	if wallet.WalletIndex == 0 {
-		t.Error("returned the wallet at HD index 0 instead of the new one")
+	if wallet.WalletID == "" {
+		t.Error("returned wallet has no Privy wallet id, so nothing could be signed with it")
+	}
+	if wallet.ExternalID != "cm00000000000000000001-"+wealthPurpose {
+		t.Errorf("ExternalID = %q, want the id derived from the user and purpose", wallet.ExternalID)
 	}
 }
 
@@ -456,8 +459,8 @@ func TestCreateUserWallet_ExternalIDLookupReturnsASignableWallet(t *testing.T) {
 	if !wallet.Delegated {
 		t.Error("wallet resolved by external id is not delegated, so Axal cannot sign with it")
 	}
-	if wallet.WalletIndex == 0 {
-		t.Error("wallet resolved by external id lost its HD index")
+	if wallet.WalletID == "" {
+		t.Error("wallet resolved by external id has no Privy wallet id")
 	}
 	if _, httpErr := cli.resolveDelegatedWallet(walletTestPrivyID, wallet.Address); httpErr != nil {
 		t.Errorf("wallet resolved by external id is not signable: %+v", httpErr)
