@@ -75,12 +75,12 @@ func (cli *PrivyClient) resolveDelegatedWallet(privyId string, walletAddress str
 	}
 
 	// A purpose-built wallet is owned by a key quorum and is not among the user's linked
-	// accounts, so the record cannot name it however fresh it is. The address is resolved at
-	// Privy instead, and the ownership check the record would have provided is re-established
-	// from the wallet's external id, which this enclave assigns from the user's own DID subject.
+	// accounts, so the record cannot name it however fresh it is. Privy is asked instead, and
+	// scoping that question to this user is what replaces the ownership proof the record used to
+	// provide: the wallet comes back only if Privy's own ownership graph puts it under this user.
 	log.Infof("Wallet %s is not on the record for user %s, resolving it at Privy", walletAddress, privyId)
 
-	privyWallet, httpErr := cli.getWalletByAddress(walletAddress)
+	privyWallet, httpErr := cli.findUserWalletByAddress(privyId, walletAddress)
 	if httpErr != nil {
 		return nil, httpErr
 	}

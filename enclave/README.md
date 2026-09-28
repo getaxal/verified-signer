@@ -102,38 +102,56 @@ made sits there. So a create error is never reported before guard 3 has been ask
 whether a wallet exists — the external ID, not the idempotency key, is the durable
 duplicate guard.
 
-**These wallets are not embedded HD wallets, and they are not in `linked_accounts`.**
-Privy answers the create with `owner_id` set to a key quorum it derived from the
-`owner.user_id` we sent, and the wallet is owned by that quorum rather than linked to the
-user the way their wallet at index 0 is. It does not appear on `GET /v1/users/{id}` at all.
-Two consequences, both load bearing:
+**These are real embedded HD wallets.** The wallet lands on the user's record at the next
+HD index, `delegated: true`, `connector_type: "embedded"`, `user_can_sign: true` — the same
+shape as their wallet at index 0. `owner_id` comes back as a key quorum Privy derives from
+the `owner.user_id` we sent, and that quorum is the same one that owns wallet 0. So the user
+holds it, can see it through their client SDK, and can sign with it themselves; Axal can sign
+too, via the attached quorum. Two consequences:
 
-- **`wallet_index` is not meaningful for a purpose wallet.** Only the user's embedded
-  wallet has an HD index. The field is present in the response because the shape is shared
-  with `linked_accounts` entries, and it is zero — do not read it as "this is wallet 0".
-- **Signing cannot resolve these wallets from the user record**, so it resolves the address
-  at Privy with `POST /v1/wallets/address` and falls back to that whenever an address is
-  not on the record. The resolved wallet is folded into the cached record, so the next
-  signature for it is a cache hit.
+- **`linked_accounts` is where `wallet_index` and `delegated` come from**, because a wallet
+  object carries neither. Provisioning takes them from the record it already read at the top of
+  the request, and only rereads past the cache when that record cannot answer — which is only
+  ever for a wallet created during the request, since the record predates it.
+- **That read is eventually consistent.** Usually the wallet is on the record the instant the
+  create returns, but it has been observed missing for longer than the request that made it.
+  So the record is preferred, never required: when it lags, the wallet object stands in and
+  `wallet_index` is reported as `-1`, never `0` — zero names the user's primary wallet.
 
-That second point moves the ownership check, which is the part to be careful about.
+Privy does **not** echo `external_id` inside `linked_accounts`, so it is carried over from the
+wallet object. Without it the cached record could not recognise the wallet on a repeat call.
+
+Signing resolves an address from the user record first. An address not found there — the same
+lag window — is resolved with `GET /v1/wallets?user_id=<id>&address=<addr>`, and the result is
+folded into the cached record so the next signature for it is a cache hit.
+
+That fallback is also where the ownership check lives, and it is the part to be careful about.
 Resolving by address means an authenticated user can name any address in the app, and the
-user record — which used to be the proof that a wallet was theirs — cannot speak for a
-quorum-owned wallet. The `external_id` stands in for it: the enclave assigns it as
-`<privy DID subject>-<purpose>`, Privy holds external IDs unique per app and write-once, so
-an id carrying this user's subject means this enclave provisioned that wallet for them and
-no one else can have claimed it. The purpose is round-tripped back through the same
-derivation rather than prefix-matched, so there is one definition of the mapping.
+record that would normally prove a wallet is theirs is, in that window, exactly what is
+missing. So the question is put to Privy, scoped to the user: the wallet comes back only if its
+owner quorum resolves to them. The returned address is re-checked against the one asked for, so
+a widened filter cannot substitute a different wallet.
 
-Two things are therefore asserted before any wallet is returned or signed with, and they
-are the same two in both paths, from one function:
+That second point is also where the ownership check lives, and it is the part to be careful
+about. Resolving by address means an authenticated user can name any address in the app, and
+the user record — which used to be the proof that a wallet was theirs — cannot speak for a
+quorum-owned wallet. So the question is put to Privy, scoped to the user: the wallet comes
+back only if its owner quorum resolves to them. The returned address is re-checked against the
+one asked for, so a widened filter cannot substitute a different wallet.
 
-1. **Axal's key quorum is among the wallet's `additional_signers`, on `ethereum`.** This is
+Three assertions guard every wallet before it is returned or signed with:
+
+1. **Privy lists the wallet under this `user_id`.** The ownership check, answered from Privy's
+   own graph rather than inferred from a convention of ours.
+2. **Axal's key quorum is among the wallet's `additional_signers`, on `ethereum`.** This is
    what `POST /v1/wallets/{id}/rpc` checks, so without it the wallet serves user-initiated
-   signing and fails every Axal-initiated one — rebalancing, reward claiming — silently, at
-   a time nobody is watching.
-2. **The `external_id` is one this enclave assigned to this user.** Without it, an
-   authenticated user could name any address in the app and be signed for.
+   signing and fails every Axal-initiated one — rebalancing, reward claiming — silently, at a
+   time nobody is watching.
+3. **If the wallet carries an `external_id`, it is one this enclave assigned to this user.**
+   Defence in depth that does not depend on the ownership filter behaving. It is conditional
+   on purpose: wallet 0 carries no external ID, so requiring one would refuse the user's own
+   wallet. Provisioning applies the stronger form — present, and this user's — because it
+   derives that ID from the authenticated user before asking Privy for anything.
 
 ### Ethereum Signing
 - **POST** `/api/v1/user/signer/eth/secp256k1Sign` - User-authenticated raw-hash signature generation
