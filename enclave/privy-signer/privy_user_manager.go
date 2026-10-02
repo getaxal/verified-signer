@@ -12,10 +12,55 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// userFetchResult carries both the user and the structured HttpError through the
+// singleflight.Group, since singleflight.Do only exposes a plain error channel.
+type userFetchResult struct {
+	user    *data.PrivyUser
+	httpErr *data.HttpError
+}
+
 // Gets a user given a Privy userID. It also checks to see if the user already has a delagted eth wallet, if it does not it will create one for them.
+//
+// Concurrent first-time calls for the same privyId are collapsed via a per-privyId
+// singleflight group: they share ONE GET and AT MOST ONE create-wallet POST. This
+// closes the check-then-create TOCTOU window where two callers both missed the
+// cache, both saw a wallet-less user, and both POSTed -> two Privy wallets.
 func (cli *PrivyClient) GetUser(privyId string) (*data.PrivyUser, *data.HttpError) {
+	// Fast path: serve straight from cache without entering the single-flight group.
 	if item := cli.userCache.Get(privyId); item != nil {
 		log.Infof("Cache Hit: %s", privyId)
+		value := item.Value()
+		return &value, nil
+	}
+
+	// Cache miss: only one goroutine per privyId runs fetchAndCacheUser; the rest
+	// block and receive the same shared result.
+	res, _, _ := cli.userFetchGroup.Do(privyId, func() (interface{}, error) {
+		user, httpErr := cli.fetchAndCacheUser(privyId)
+		return userFetchResult{user: user, httpErr: httpErr}, nil
+	})
+
+	result := res.(userFetchResult)
+	if result.httpErr != nil {
+		return nil, result.httpErr
+	}
+
+	// Hand each collapsed caller its own *PrivyUser rather than the single shared
+	// pointer from fetchAndCacheUser. This matches the cache fast-path semantics
+	// (which returns &value, a per-caller copy) so a downstream mutation can never
+	// race across the N goroutines that collapsed onto this single flight.
+	user := *result.user
+	return &user, nil
+}
+
+// fetchAndCacheUser performs the actual GET + create-wallet-if-needed + cache fill.
+// It runs inside the singleflight critical section for a given privyId.
+func (cli *PrivyClient) fetchAndCacheUser(privyId string) (*data.PrivyUser, *data.HttpError) {
+	// Re-check the cache inside the critical section: a concurrent winner that
+	// finished just before us may already have populated it. singleflight only
+	// dedups overlapping calls, not strictly sequential ones.
+	if item := cli.userCache.Get(privyId); item != nil {
+		log.Infof("Cache Hit (in-flight): %s", privyId)
 		value := item.Value()
 		return &value, nil
 	}
@@ -83,9 +128,17 @@ func (cli *PrivyClient) GetUser(privyId string) (*data.PrivyUser, *data.HttpErro
 		return nil, httpErr
 	}
 
-	cli.userCache.Set(privyId, *userWithWallet, ttlcache.DefaultTTL)
+	cli.cacheUser(privyId, userWithWallet)
 
 	return userWithWallet, nil
+}
+
+// Writes a user record into the cache.
+//
+// The signing path resolves wallet addresses out of this record, so whatever is stored
+// here is what the enclave believes a user's wallets to be until it expires.
+func (cli *PrivyClient) cacheUser(privyId string, user *data.PrivyUser) {
+	cli.userCache.Set(privyId, *user, ttlcache.DefaultTTL)
 }
 
 // Checks to see if a user has a delegated eth wallet, if the user does not it will create one for them
@@ -170,18 +223,59 @@ func (cli *PrivyClient) createUserWalletsIfNotExists(user data.PrivyUser, userId
 		}
 	}
 
-	// We check the response for the delegated eth wallet and then we add it to the user
-	for _, linkedAcc := range createWalletResp.LinkedAccounts {
-		if linkedAcc.Delegated && linkedAcc.ChainType == "ethereum" {
-			user.LinkedAccounts = append(user.LinkedAccounts, *linkedAcc)
-			return &user, nil
+	// Keep every account the response carries, not just the first delegated eth wallet: a
+	// user may hold several wallets and callers select between them by address, so
+	// dropping the rest here would make them unsignable.
+	mergeLinkedAccounts(&user, createWalletResp.LinkedAccounts)
+
+	// Assert delegation actually took rather than trusting the Privy default. A wallet
+	// created without our signer attached would serve user-initiated signing and fail
+	// every Axal-initiated one, silently, at a time nobody is watching.
+	if user.GetUsersEthDelegatedWallet() == nil {
+		log.Errorf("created wallet for user %s did not come back delegated", userId)
+		return nil, &data.HttpError{
+			Code: 500,
+			Message: data.Message{
+				Message: "Internal Server Error",
+			},
 		}
 	}
 
-	return nil, &data.HttpError{
-		Code: 500,
-		Message: data.Message{
-			Message: "Internal Server Error",
-		},
+	return &user, nil
+}
+
+// Folds the linked accounts from a create-wallet response into the user, keyed by wallet
+// id.
+//
+// Privy may echo the user's full account set rather than only the wallet just created, so
+// a plain append would duplicate wallets we already hold. Matching on wallet id keeps the
+// merge idempotent and lets an existing entry be refreshed in place.
+func mergeLinkedAccounts(user *data.PrivyUser, accounts []*data.LinkedAccount) {
+	positions := make(map[string]int, len(user.LinkedAccounts))
+	for i, acc := range user.LinkedAccounts {
+		if acc.WalletID != "" {
+			positions[acc.WalletID] = i
+		}
 	}
+
+	for _, acc := range accounts {
+		if acc == nil {
+			continue
+		}
+
+		if i, seen := positions[acc.WalletID]; seen && acc.WalletID != "" {
+			user.LinkedAccounts[i] = *acc
+			continue
+		}
+
+		user.LinkedAccounts = append(user.LinkedAccounts, *acc)
+		if acc.WalletID != "" {
+			positions[acc.WalletID] = len(user.LinkedAccounts) - 1
+		}
+	}
+}
+
+// Drops a user's cached record, forcing the next read to come from Privy.
+func (cli *PrivyClient) InvalidateUser(privyId string) {
+	cli.userCache.Delete(privyId)
 }

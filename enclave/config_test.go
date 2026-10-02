@@ -151,6 +151,8 @@ ports:
   privy_api_vsock_port: 8002
   router_vsock_port: 8003
   ec2_creds_vsock_port: 0
+axal:
+  axal_request_secret_key: "test-axal-secret-key"
 `,
 			filename: "zero_ec2_port_config.yaml",
 			wantErr:  false,
@@ -163,6 +165,20 @@ ports:
 					Ec2CredsVsockPort:         0,
 				},
 			},
+		},
+		{
+			name: "Empty axal_request_secret_key is rejected",
+			configYAML: `
+environment: "local"
+ports:
+  aws_secret_manager_vsock_port: 8001
+  privy_api_vsock_port: 8002
+  router_vsock_port: 8003
+  ec2_creds_vsock_port: 8004
+`,
+			filename:    "empty_axal_key_config.yaml",
+			wantErr:     true,
+			errContains: "axal_request_secret_key is empty",
 		},
 	}
 

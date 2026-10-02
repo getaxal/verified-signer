@@ -3,6 +3,7 @@ package data
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,16 +20,17 @@ type LinkedAccount struct {
 	Address string `json:"address,omitempty"`
 
 	// Wallet-specific fields
-	WalletIndex      int    `json:"wallet_index,omitempty"`
+	WalletIndex      int    `json:"wallet_index"`
 	ChainID          string `json:"chain_id,omitempty"`
 	ChainType        string `json:"chain_type,omitempty"`
-	Delegated        bool   `json:"delegated,omitempty"`
+	Delegated        bool   `json:"delegated"`
 	WalletClient     string `json:"wallet_client,omitempty"`
 	WalletClientType string `json:"wallet_client_type,omitempty"`
 	ConnectorType    string `json:"connector_type,omitempty"`
 	Imported         bool   `json:"imported,omitempty"`
 	RecoveryMethod   string `json:"recovery_method,omitempty"`
 	PublicKey        string `json:"public_key,omitempty"`
+	ExternalID       string `json:"external_id,omitempty"`
 }
 
 // PrivyUser represents the main user object from Privy API
@@ -45,6 +47,47 @@ type PrivyUser struct {
 func (pu *PrivyUser) GetUsersEthDelegatedWallet() *LinkedAccount {
 	for _, acc := range pu.LinkedAccounts {
 		if acc.Delegated && acc.ChainType == "ethereum" {
+			return &acc
+		}
+	}
+
+	return nil
+}
+
+// Fetches the users delegated eth wallet at a specific address, or nil if the user does
+// not hold one. Address comparison is case insensitive.
+//
+// A user may hold several delegated eth wallets, so signing requests name the one they
+// want and we resolve it here. The delegated/chain_type filter is load bearing rather
+// than defensive: LinkedAccount.Address carries email addresses as well as wallet
+// addresses, so matching on the address alone would let a non wallet account satisfy
+// the lookup.
+func (pu *PrivyUser) GetEthDelegatedWalletByAddress(address string) *LinkedAccount {
+	if address == "" {
+		return nil
+	}
+
+	for _, acc := range pu.LinkedAccounts {
+		if acc.Delegated && acc.ChainType == "ethereum" && strings.EqualFold(acc.Address, address) {
+			return &acc
+		}
+	}
+
+	return nil
+}
+
+// Fetches the users delegated eth wallet carrying a given Privy external id, or nil.
+//
+// This is how a purpose-built wallet is recognised on a repeat provisioning request, so
+// that asking twice returns the wallet the user already has instead of minting a second
+// one they could split funds across.
+func (pu *PrivyUser) GetEthDelegatedWalletByExternalID(externalID string) *LinkedAccount {
+	if externalID == "" {
+		return nil
+	}
+
+	for _, acc := range pu.LinkedAccounts {
+		if acc.Delegated && acc.ChainType == "ethereum" && acc.ExternalID == externalID {
 			return &acc
 		}
 	}
@@ -111,6 +154,7 @@ type CreateWalletData struct {
 	ChainType         string              `json:"chain_type"` // ethereum, solana, etc.
 	CreateSmartWallet bool                `json:"create_smart_wallet,omitempty"`
 	AdditionalSigners []*AdditionalSigner `json:"additional_signers,omitempty"`
+	ExternalID        string              `json:"external_id,omitempty"`
 }
 
 // AdditionalSigner represents additional signers for wallet creation
@@ -119,6 +163,13 @@ type AdditionalSigner struct {
 	OverridePolicyIDs []string `json:"override_policy_ids,omitempty"`
 }
 
+// Creates the request that provisions a user's embedded eth wallet, the one at HD index 0.
+//
+// It carries no external id, because this endpoint does not mint wallets on demand: it
+// provisions the embedded wallet a user does not yet have and answers 200 without creating
+// anything for a chain type they already hold. An external id here would be assigned to a
+// wallet only on the very first provision and silently dropped afterwards. Purpose-built
+// wallets are created with NewCreateDelegatedEthWalletRequest instead.
 func NewCreateEthWalletRequest(delegatedSignerId string) *CreateWalletRequest {
 	return &CreateWalletRequest{
 		PrivyWalletCreateRequestWallets: []*CreateWalletData{
@@ -132,6 +183,87 @@ func NewCreateEthWalletRequest(delegatedSignerId string) *CreateWalletRequest {
 			},
 		},
 	}
+}
+
+// CreateWalletForOwnerRequest creates a wallet on Privy's wallet API, owned by a user.
+//
+// This is not the same call as CreateWalletRequest, which posts to a user's own wallets
+// collection and only provisions the embedded wallet a user does not yet have — it is a
+// no-op for a chain type the user already holds, which is no way to add a second wallet.
+// This one mints a wallet per call, which is what a purpose-built wallet needs.
+//
+// Owner and additional signer are different roles and both are load bearing. The user owns
+// the wallet, so it is theirs and appears on their account; our key quorum is attached as an
+// additional signer, which is what authorises Axal-initiated signing. Setting our quorum as
+// the owner instead would take the wallet away from the user.
+type CreateWalletForOwnerRequest struct {
+	ChainType         string              `json:"chain_type"`
+	ExternalID        string              `json:"external_id,omitempty"`
+	Owner             *WalletOwner        `json:"owner,omitempty"`
+	AdditionalSigners []*AdditionalSigner `json:"additional_signers,omitempty"`
+}
+
+// WalletOwner names the Privy user a wallet belongs to.
+type WalletOwner struct {
+	UserID string `json:"user_id"`
+}
+
+func NewCreateDelegatedEthWalletRequest(privyId string, delegatedSignerId string, externalID string) *CreateWalletForOwnerRequest {
+	return &CreateWalletForOwnerRequest{
+		ChainType:  "ethereum",
+		ExternalID: externalID,
+		Owner:      &WalletOwner{UserID: privyId},
+		AdditionalSigners: []*AdditionalSigner{
+			{SignerID: delegatedSignerId},
+		},
+	}
+}
+
+// WalletListResponse is a page of Privy's wallets collection.
+type WalletListResponse struct {
+	Data       []*PrivyWallet `json:"data"`
+	NextCursor string         `json:"next_cursor,omitempty"`
+}
+
+// PrivyWallet is the wallet object Privy's wallet endpoints return.
+//
+// It is not a linked_accounts entry and the two are not interchangeable. This carries the
+// wallet's signer configuration, which the user object does not expose, and lacks
+// wallet_index and delegated, which only the user object has.
+type PrivyWallet struct {
+	ID                string              `json:"id"`
+	Address           string              `json:"address"`
+	ChainType         string              `json:"chain_type,omitempty"`
+	ExternalID        string              `json:"external_id,omitempty"`
+	PublicKey         string              `json:"public_key,omitempty"`
+	OwnerID           string              `json:"owner_id,omitempty"`
+	AdditionalSigners []*AdditionalSigner `json:"additional_signers,omitempty"`
+}
+
+// Reports whether a key quorum is attached to the wallet as an additional signer.
+//
+// This is what authorises Axal-initiated signing: the /rpc call is accepted because the
+// request is signed by this quorum's key. It is the difference between a wallet the enclave
+// can rebalance from and one only its user can ever move, so it is checked rather than
+// assumed for a wallet we did not watch being created.
+func (w *PrivyWallet) HasAdditionalSigner(signerID string) bool {
+	if signerID == "" {
+		return false
+	}
+
+	for _, signer := range w.AdditionalSigners {
+		if signer != nil && signer.SignerID == signerID {
+			return true
+		}
+	}
+
+	return false
+}
+
+// The identifier Privy's wallet endpoints accept in place of a wallet id, for a wallet
+// carrying an external id.
+func ExternalWalletRef(externalID string) string {
+	return "ext_wal_" + externalID
 }
 
 // CreateWalletResponse represents the response for creating a single wallet

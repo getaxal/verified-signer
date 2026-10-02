@@ -138,11 +138,16 @@ func TestVerifyAxalSignature(t *testing.T) {
 			expected:  false,
 		},
 		{
-			name:      "Empty secret key",
+			name:      "Empty secret key is rejected",
 			payload:   "hello world",
 			signature: "c2ea634c993f050482b4e6243224087f7c23bdd3c07ab1a45e9a21c62fad994e",
 			secretKey: "",
-			expected:  true, // Should match since we're using the correct signature for empty key
+			// HMAC with an empty key is publicly reproducible — anyone who knows
+			// the payload can compute this signature without sharing any secret.
+			// VerifyAxalSignature must fail closed so a misconfigured enclave
+			// (empty SecretManager field, local env, etc.) cannot authorize
+			// forged signing requests.
+			expected: false,
 		},
 		{
 			name:      "Case sensitive signature",

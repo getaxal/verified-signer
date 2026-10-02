@@ -39,6 +39,7 @@ func initRoutes(r *gin.Engine) {
 		userGroup := v1.Group("/user")
 		{
 			userGroup.GET("", GetUserHandler)
+			userGroup.POST("/wallet", CreateUserWalletHandler)
 
 			signerGroup := userGroup.Group("/signer")
 			{
@@ -58,6 +59,7 @@ func initRoutes(r *gin.Engine) {
 				axalEthGroup := axalSignerGroup.Group("/eth")
 				{
 					axalEthGroup.POST("/secp256k1Sign", AxalEthSecp256k1SignTxHandler)
+					axalEthGroup.POST("/personalSign", AxalEthPersonalSignHandler)
 				}
 			}
 		}

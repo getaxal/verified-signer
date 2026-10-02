@@ -28,22 +28,192 @@ The Transaction Verifier implements safety checks and validates transactions aga
 
 ## API Endpoints
 
+Full request and response shapes, including the HMAC preimages and error table, are in
+[API.md](API.md). The summary below is the route list.
+
 ### Health Check
 - **GET** `/api/v1/health/ping` - Health check endpoint for service availability
 
 ### User Management
-- **GET** `/api/v1/user/:userId` - Retrieve user information and configuration
+- **GET** `/api/v1/user` - Retrieve the authenticated Privy user
+- **POST** `/api/v1/user/wallet` - Provision an additional delegated EVM wallet for the authenticated user
+
+#### Wallet provisioning
+
+A user may hold several delegated EVM wallets — one per pot of money, so balances
+and PnL can be tracked apart. `POST /api/v1/user/wallet` provisions one and returns
+it as a linked account:
+
+```jsonc
+// request                          // response: 200, the wallet
+{ "purpose": "wealth_plan" }        { "id": "...", "type": "wallet", "address": "0x...",
+                                      "chain_type": "ethereum", "wallet_index": 1,
+                                      "delegated": true, "external_id": "<subject>-wealth_plan" }
+```
+
+Wallets are named by **purpose, not HD index**. Privy's server API treats
+`wallet_index` as read-only on the wallet it returns — only the client SDK can pin
+an index — so an index in the request would name something the enclave cannot
+honour. A purpose maps to a stable Privy `external_id` of `<privy DID subject>-<purpose>`,
+which is what identifies the wallet on any later call. Purposes are lowercase
+`[a-z][a-z0-9_-]{0,31}`; the charset is narrower than it looks because the purpose
+becomes part of the external ID, which Privy restricts to `[a-zA-Z0-9_-]`.
+
+The wallet is created on Privy's **wallet API** (`POST /v1/wallets`), with `owner` set
+to the user and the enclave's key quorum attached as an `additional_signer`:
+
+```jsonc
+{ "chain_type": "ethereum", "external_id": "<subject>-wealth_plan",
+  "owner": { "user_id": "did:privy:..." },
+  "additional_signers": [ { "signer_id": "<delegated actions key id>" } ] }
+```
+
+Not `POST /v1/users/{user_id}/wallets`. That endpoint provisions the embedded wallet a
+user does not yet have, and **answers `200` without creating anything** for a chain type
+the user already holds — so every request for a second wallet succeeded while minting
+nothing. Owner and additional signer are different roles and both are load bearing: the
+user owns the wallet, so it is theirs and appears on their account, while the quorum is
+what authorises Axal-initiated signing. Setting the quorum as `owner_id` instead would
+take the wallet away from the user.
+
+**Repeat calls return the existing wallet.** A duplicate wallet is not a failed
+request that can be retried away — it is a second address that may already have
+received money, with no way to tell which one the user's funds went to. Four
+guards stack, so none has to be perfect on its own:
+
+1. a singleflight group keyed on the external ID collapses concurrent callers
+   within an enclave into a single create;
+2. the create is skipped when the user already holds a wallet with that external ID;
+3. the wallet is looked up directly as `GET /v1/wallets/ext_wal_<external_id>`, which
+   answers whether one exists regardless of what the user record shows;
+4. Privy receives a deterministic `privy-idempotency-key`, and the external ID is unique
+   per app, so a duplicate create collides server side rather than quietly producing a
+   second funded address.
+
+Guards 3 and 4 are the ones that hold across instances, and guard 3 is the only one
+that does not depend on Privy echoing our `external_id` back inside `linked_accounts`.
+Guard 2 alone is not enough for exactly that reason: when the echo is missing, a user
+who already holds the wallet is indistinguishable from one who does not.
+
+Guard 4 also has a sharp edge worth knowing: **Privy caches `4xx` and `5xx` responses
+against the idempotency key and replays them for 24 hours.** A create that failed on the
+way back therefore answers every retry with the same cached error, while the wallet it
+made sits there. So a create error is never reported before guard 3 has been asked
+whether a wallet exists — the external ID, not the idempotency key, is the durable
+duplicate guard.
+
+**These are real embedded HD wallets.** The wallet lands on the user's record at the next
+HD index, `delegated: true`, `connector_type: "embedded"`, `user_can_sign: true` — the same
+shape as their wallet at index 0. `owner_id` comes back as a key quorum Privy derives from
+the `owner.user_id` we sent, and that quorum is the same one that owns wallet 0. So the user
+holds it, can see it through their client SDK, and can sign with it themselves; Axal can sign
+too, via the attached quorum. Two consequences:
+
+- **`linked_accounts` is where `wallet_index` and `delegated` come from**, because a wallet
+  object carries neither. Provisioning takes them from the record it already read at the top of
+  the request, and only rereads past the cache when that record cannot answer — which is only
+  ever for a wallet created during the request, since the record predates it.
+- **That read is eventually consistent.** Usually the wallet is on the record the instant the
+  create returns, but it has been observed missing for longer than the request that made it.
+  So the record is preferred, never required: when it lags, the wallet object stands in and
+  `wallet_index` is reported as `-1`, never `0` — zero names the user's primary wallet.
+
+Privy does **not** echo `external_id` inside `linked_accounts`, so it is carried over from the
+wallet object. Without it the cached record could not recognise the wallet on a repeat call.
+
+Signing resolves an address from the user record first. An address not found there — the same
+lag window — is resolved with `GET /v1/wallets?user_id=<id>&address=<addr>`, and the result is
+folded into the cached record so the next signature for it is a cache hit.
+
+That fallback is also where the ownership check lives, and it is the part to be careful about.
+Resolving by address means an authenticated user can name any address in the app, and the
+record that would normally prove a wallet is theirs is, in that window, exactly what is
+missing. So the question is put to Privy, scoped to the user: the wallet comes back only if its
+owner quorum resolves to them. The returned address is re-checked against the one asked for, so
+a widened filter cannot substitute a different wallet.
+
+That second point is also where the ownership check lives, and it is the part to be careful
+about. Resolving by address means an authenticated user can name any address in the app, and
+the user record — which used to be the proof that a wallet was theirs — cannot speak for a
+quorum-owned wallet. So the question is put to Privy, scoped to the user: the wallet comes
+back only if its owner quorum resolves to them. The returned address is re-checked against the
+one asked for, so a widened filter cannot substitute a different wallet.
+
+Three assertions guard every wallet before it is returned or signed with:
+
+1. **Privy lists the wallet under this `user_id`.** The ownership check, answered from Privy's
+   own graph rather than inferred from a convention of ours.
+2. **Axal's key quorum is among the wallet's `additional_signers`, on `ethereum`.** This is
+   what `POST /v1/wallets/{id}/rpc` checks, so without it the wallet serves user-initiated
+   signing and fails every Axal-initiated one — rebalancing, reward claiming — silently, at a
+   time nobody is watching.
+3. **If the wallet carries an `external_id`, it is one this enclave assigned to this user.**
+   Defence in depth that does not depend on the ownership filter behaving. It is conditional
+   on purpose: wallet 0 carries no external ID, so requiring one would refuse the user's own
+   wallet. Provisioning applies the stronger form — present, and this user's — because it
+   derives that ID from the authenticated user before asking Privy for anything.
 
 ### Ethereum Signing
-- **POST** `/api/v1/signer/eth/ethSignTx/:userId` - Sign Ethereum transactions
-- **POST** `/api/v1/signer/eth/ethSendTx/:userId` - Sign and send Ethereum transactions
-- **POST** `/api/v1/signer/eth/personalSign/:userId` - Ethereum personal message signing
-- **POST** `/api/v1/signer/eth/secp256k1Sign/:userId` - SECP256K1 signature generation
+- **POST** `/api/v1/user/signer/eth/secp256k1Sign` - User-authenticated raw-hash signature generation
+- **POST** `/api/v1/axal/signer/eth/secp256k1Sign` - HMAC-authenticated Axal raw-hash signature generation
+- **POST** `/api/v1/axal/signer/eth/personalSign` - HMAC-authenticated EIP-191 personal message signing
 
-### Solana Signing
-- **POST** `/api/v1/signer/sol/solSignTx/:userId` - Sign Solana transactions
-- **POST** `/api/v1/signer/sol/solSendTx/:userId` - Sign and send Solana transactions
-- **POST** `/api/v1/signer/sol/signMessage/:userId` - Solana message signing
+#### Wallet selection
+
+A Privy user may hold more than one delegated EVM wallet, so **every signing
+route requires the caller to name the wallet to sign with** via a
+`wallet_address` field. Send it lowercase and `0x`-prefixed; comparison is
+case-insensitive.
+
+The enclave never infers a signer. Before signing, the named address must
+resolve to a delegated `ethereum` wallet belonging to the authenticated user —
+the user identified by the JWT on the user route, or by `privy_id` on the Axal
+routes. An address that is absent, malformed, unknown, or owned by a different
+user is rejected. There is no fallback to another wallet: a signature from the
+wrong key produces a user operation that fails validation on chain, which is
+far more expensive to diagnose than a `4xx`.
+
+The wallet is covered by the request's HMAC on the Axal routes, so it is
+authenticated rather than merely asserted. For `secp256k1Sign` the preimage is:
+
+```
+hash + ":" + privyId + ":" + walletAddress
+```
+
+Anyone able to modify a request body in flight therefore cannot redirect a
+signature to another of the user's wallets: changing the address invalidates
+the signature, and stripping it leaves an HMAC that does not verify.
+
+The Axal `personalSign` route is provider-neutral. It accepts the `utf-8` and
+`hex` encodings supported by Privy, requires a provider-independent purpose,
+and verifies the requested wallet as described above. The HMAC covers the
+method, purpose, encoding, wallet, SHA-256 message digest, and Privy ID. Raw
+messages and signatures are not logged. Callers are responsible for applying
+any use-case-specific message or challenge validation before requesting a
+signature.
+
+#### Caching
+
+User records are cached for **2 hours** and the signing path resolves wallet addresses out
+of that record, so one cache holds both the user and their wallets — address, HD index,
+Privy wallet id, delegation and external id.
+
+Two properties keep the longer TTL honest:
+
+- **Creation writes the record back, it does not evict it.** Provisioning a wallet folds
+  the create response into the cached user before returning `200`, so a caller that
+  provisions a wallet and immediately signs with it finds the wallet already there. The
+  merge works on a copy: `GetUser` hands back a shallow copy whose `LinkedAccounts` slice
+  still shares a backing array with the cached entry, so merging in place would mutate the
+  cache underneath other readers.
+- **Reads do not extend the TTL.** `ttlcache` refreshes an item on every read unless
+  disabled. Left on, the users who sign most would be the ones whose record is never
+  re-read from Privy, and the TTL would quietly mean forever.
+
+Note that delegation state is cached with everything else, so revoking a wallet's
+delegation can take up to the TTL to be reflected here. That is a staleness window, not an
+authorization hole: Privy enforces the signer quorum at RPC time, so a revoked wallet is
+refused there regardless of what the enclave believes.
 
 ### Attestation
 - **GET** `/api/v1/attest/bytes/:nonce` - Get attestation bytes for verification
@@ -107,4 +277,3 @@ The enclave provides cryptographic attestation capabilities through the `/api/v1
 - Cryptographic operations use secure, audited libraries
 - Regular security audits and penetration testing
 - Open-source enclave code for transparency and verification
-
