@@ -137,9 +137,13 @@ func newResolveClient(t *testing.T, state *resolveServer) *PrivyClient {
 				return
 			}
 
+			// Every user here also holds a delegated solana wallet, for the reason they hold
+			// wallet 0: without one, GetUser provisions it and the mock would be answering a
+			// create it is not the subject of. It is added here rather than in each test's
+			// accounts because none of these tests is about it.
 			b, _ := json.Marshal(data.PrivyUser{
 				PrivyID:        walletTestPrivyID,
-				LinkedAccounts: accounts,
+				LinkedAccounts: append(append([]data.LinkedAccount(nil), accounts...), solWalletAccount()),
 			})
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(b)

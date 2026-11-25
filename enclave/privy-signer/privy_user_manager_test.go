@@ -17,8 +17,9 @@ import (
 
 const testRacePrivyID = "did:privy:concurrencytest0001"
 
-// walletlessUserJSON returns a Privy user with NO delegated eth wallet, forcing
-// createUserWalletsIfNotExists down the create-wallet POST path.
+// walletlessUserJSON returns a Privy user with NO wallet on either chain, forcing both
+// createUserWalletsIfNotExists and createUserSolWalletIfNotExists down the create-wallet
+// POST path.
 func walletlessUserJSON(id string) string {
 	user := data.PrivyUser{
 		PrivyID: id,
@@ -49,14 +50,45 @@ func delegatedWalletResponseJSON() string {
 	return string(b)
 }
 
-// newTestPrivyClient builds a PrivyClient wired to a mock Privy HTTP server.
-// getCount / postCount let tests assert exactly how many times each Privy
-// endpoint was hit. A configurable delay on the GET widens the race window so
-// concurrent callers reliably overlap inside the (former) check-then-create gap.
-func newTestPrivyClient(t *testing.T, getDelay time.Duration) (*PrivyClient, *int64, *int64) {
+// delegatedSolWalletResponseJSON is the same for the solana create: the embedded wallet,
+// delegated, as Privy renders it on the user.
+func delegatedSolWalletResponseJSON() string {
+	account := solWalletAccount()
+	resp := data.CreateWalletResponse{
+		ID:             testRacePrivyID,
+		LinkedAccounts: []*data.LinkedAccount{&account},
+	}
+	b, _ := json.Marshal(resp)
+	return string(b)
+}
+
+// Reads which chain a create-wallet POST asked for. The two creates share a path, so the
+// body is the only thing that tells them apart.
+func createdChainType(t *testing.T, r *http.Request) string {
 	t.Helper()
 
-	var getCount, postCount int64
+	var body data.CreateWalletRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		t.Errorf("create-wallet POST body did not decode: %v", err)
+		return ""
+	}
+	if len(body.PrivyWalletCreateRequestWallets) != 1 {
+		t.Errorf("create-wallet POST asked for %d wallets, want 1 per request", len(body.PrivyWalletCreateRequestWallets))
+		return ""
+	}
+
+	return body.PrivyWalletCreateRequestWallets[0].ChainType
+}
+
+// newTestPrivyClient builds a PrivyClient wired to a mock Privy HTTP server.
+// getCount / postCount / solPostCount let tests assert exactly how many times each Privy
+// endpoint was hit; the two POST counts are the eth and the solana create. A configurable
+// delay on the GET widens the race window so concurrent callers reliably overlap inside the
+// (former) check-then-create gap.
+func newTestPrivyClient(t *testing.T, getDelay time.Duration) (*PrivyClient, *int64, *int64, *int64) {
+	t.Helper()
+
+	var getCount, postCount, solPostCount int64
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -69,6 +101,13 @@ func newTestPrivyClient(t *testing.T, getDelay time.Duration) (*PrivyClient, *in
 			_, _ = w.Write([]byte(walletlessUserJSON(testRacePrivyID)))
 
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/wallets"):
+			if createdChainType(t, r) == data.ChainTypeSolana {
+				atomic.AddInt64(&solPostCount, 1)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(delegatedSolWalletResponseJSON()))
+				return
+			}
+
 			atomic.AddInt64(&postCount, 1)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(delegatedWalletResponseJSON()))
@@ -98,19 +137,19 @@ func newTestPrivyClient(t *testing.T, getDelay time.Duration) (*PrivyClient, *in
 		userCache: cache,
 	}
 
-	return cli, &getCount, &postCount
+	return cli, &getCount, &postCount, &solPostCount
 }
 
 // TestGetUser_ConcurrentFirstTime_CreatesAtMostOneWallet fires N concurrent
 // first-time GetUser calls for the SAME privyId against a mocked Privy layer and
-// asserts the create-wallet POST is invoked AT MOST ONCE. Without the per-privyId
-// singleflight guard, every goroutine would miss the cache, GET a wallet-less
-// user, pass the createUserWalletsIfNotExists check, and POST -> N wallets.
+// asserts the create-wallet POST is invoked AT MOST ONCE per chain. Without the
+// per-privyId singleflight guard, every goroutine would miss the cache, GET a
+// wallet-less user, pass the createUserWalletsIfNotExists check, and POST -> N wallets.
 func TestGetUser_ConcurrentFirstTime_CreatesAtMostOneWallet(t *testing.T) {
 	const n = 50
 
 	// Delay the GET so all N goroutines are guaranteed to overlap in the window.
-	cli, getCount, postCount := newTestPrivyClient(t, 100*time.Millisecond)
+	cli, getCount, postCount, solPostCount := newTestPrivyClient(t, 100*time.Millisecond)
 
 	var wg sync.WaitGroup
 	start := make(chan struct{})
@@ -135,6 +174,12 @@ func TestGetUser_ConcurrentFirstTime_CreatesAtMostOneWallet(t *testing.T) {
 		t.Fatalf("create-wallet POST count = %d, want exactly 1", got)
 	}
 
+	// The solana wallet is provisioned inside the same critical section, so it collapses
+	// the same way: a second create here is a second solana address for one user.
+	if got := atomic.LoadInt64(solPostCount); got != 1 {
+		t.Fatalf("create-solana-wallet POST count = %d, want exactly 1", got)
+	}
+
 	if got := atomic.LoadInt64(getCount); got != 1 {
 		t.Errorf("GET user count = %d, want exactly 1 (calls should collapse)", got)
 	}
@@ -151,6 +196,9 @@ func TestGetUser_ConcurrentFirstTime_CreatesAtMostOneWallet(t *testing.T) {
 		if results[i].GetUsersEthDelegatedWallet() == nil {
 			t.Errorf("goroutine %d: user is missing delegated eth wallet", i)
 		}
+		if results[i].GetUsersSolDelegatedWallet() == nil {
+			t.Errorf("goroutine %d: user is missing delegated solana wallet", i)
+		}
 	}
 }
 
@@ -158,7 +206,7 @@ func TestGetUser_ConcurrentFirstTime_CreatesAtMostOneWallet(t *testing.T) {
 // been created and cached, subsequent sequential calls serve from cache and issue
 // no further GET or POST to Privy.
 func TestGetUser_RepeatedCallsAfterSuccess_HitCache(t *testing.T) {
-	cli, getCount, postCount := newTestPrivyClient(t, 0)
+	cli, getCount, postCount, solPostCount := newTestPrivyClient(t, 0)
 
 	user, httpErr := cli.GetUser(testRacePrivyID)
 	if httpErr != nil {
@@ -166,6 +214,9 @@ func TestGetUser_RepeatedCallsAfterSuccess_HitCache(t *testing.T) {
 	}
 	if user == nil || user.GetUsersEthDelegatedWallet() == nil {
 		t.Fatal("first GetUser returned no delegated wallet")
+	}
+	if user.GetUsersSolDelegatedWallet() == nil {
+		t.Fatal("first GetUser returned no delegated solana wallet")
 	}
 
 	for i := 0; i < 10; i++ {
@@ -180,14 +231,17 @@ func TestGetUser_RepeatedCallsAfterSuccess_HitCache(t *testing.T) {
 	if got := atomic.LoadInt64(postCount); got != 1 {
 		t.Errorf("create-wallet POST count = %d, want 1", got)
 	}
+	if got := atomic.LoadInt64(solPostCount); got != 1 {
+		t.Errorf("create-solana-wallet POST count = %d, want 1", got)
+	}
 }
 
 // TestGetUser_ErrorIsNotCached confirms that a failed create-wallet does NOT
 // poison the cache: the next call must re-enter the fetch path and retry rather
 // than returning a cached failure or skipping the lock.
 func TestGetUser_ErrorIsNotCached(t *testing.T) {
-	var getCount, postCount int64
-	failPost := int64(1) // first POST fails, subsequent ones succeed
+	var getCount, postCount, solPostCount int64
+	failPost := int64(1) // first eth POST fails, subsequent ones succeed
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -197,6 +251,13 @@ func TestGetUser_ErrorIsNotCached(t *testing.T) {
 			_, _ = w.Write([]byte(walletlessUserJSON(testRacePrivyID)))
 
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/wallets"):
+			if createdChainType(t, r) == data.ChainTypeSolana {
+				atomic.AddInt64(&solPostCount, 1)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(delegatedSolWalletResponseJSON()))
+				return
+			}
+
 			atomic.AddInt64(&postCount, 1)
 			if atomic.CompareAndSwapInt64(&failPost, 1, 0) {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -245,5 +306,11 @@ func TestGetUser_ErrorIsNotCached(t *testing.T) {
 	}
 	if got := atomic.LoadInt64(&postCount); got != 2 {
 		t.Errorf("create-wallet POST count = %d, want 2 (one failed + one successful retry)", got)
+	}
+
+	// The eth wallet comes first and its failure ends the read, so a solana wallet is never
+	// requested for a user whose eth wallet did not get made.
+	if got := atomic.LoadInt64(&solPostCount); got != 1 {
+		t.Errorf("create-solana-wallet POST count = %d, want 1 (only on the read whose eth create succeeded)", got)
 	}
 }

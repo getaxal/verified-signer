@@ -43,6 +43,30 @@ type PrivyUser struct {
 	IsGuest          bool            `json:"is_guest"`
 }
 
+// The chain types the enclave signs for, as Privy spells them.
+const (
+	ChainTypeEthereum = "ethereum"
+	ChainTypeSolana   = "solana"
+)
+
+// Reports whether two addresses name the same wallet on a chain.
+//
+// The rule is per chain because the encodings disagree about what case means. An EVM address
+// is hex, where casing is at most a checksum, so one wallet arrives in several spellings. A
+// Solana address is base58, where case is part of the value: two addresses that differ only
+// in case are different keys, and folding them would let one stand in for the other.
+func SameWalletAddress(chainType string, a string, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+
+	if chainType == ChainTypeEthereum {
+		return strings.EqualFold(a, b)
+	}
+
+	return a == b
+}
+
 // Fetches the users Eth delegated wallet, this is a wallet that simply is both an ethereum wallet as well as a delegated wallet
 func (pu *PrivyUser) GetUsersEthDelegatedWallet() *LinkedAccount {
 	for _, acc := range pu.LinkedAccounts {
@@ -54,26 +78,37 @@ func (pu *PrivyUser) GetUsersEthDelegatedWallet() *LinkedAccount {
 	return nil
 }
 
-// Fetches the users delegated eth wallet at a specific address, or nil if the user does
-// not hold one. Address comparison is case insensitive.
+// Fetches the users delegated wallet at a specific address on a chain, or nil if the user
+// does not hold one. Addresses are compared the way the chain compares them.
 //
-// A user may hold several delegated eth wallets, so signing requests name the one they
-// want and we resolve it here. The delegated/chain_type filter is load bearing rather
-// than defensive: LinkedAccount.Address carries email addresses as well as wallet
-// addresses, so matching on the address alone would let a non wallet account satisfy
-// the lookup.
-func (pu *PrivyUser) GetEthDelegatedWalletByAddress(address string) *LinkedAccount {
+// A user may hold several delegated wallets, so signing requests name the one they want and
+// we resolve it here. The delegated/chain_type filter is load bearing rather than defensive:
+// LinkedAccount.Address carries email addresses as well as wallet addresses, so matching on
+// the address alone would let a non wallet account satisfy the lookup.
+func (pu *PrivyUser) GetDelegatedWalletByAddress(chainType string, address string) *LinkedAccount {
 	if address == "" {
 		return nil
 	}
 
 	for _, acc := range pu.LinkedAccounts {
-		if acc.Delegated && acc.ChainType == "ethereum" && strings.EqualFold(acc.Address, address) {
+		if acc.Delegated && acc.ChainType == chainType && SameWalletAddress(chainType, acc.Address, address) {
 			return &acc
 		}
 	}
 
 	return nil
+}
+
+// Fetches the users delegated eth wallet at a specific address, or nil if the user does
+// not hold one. Address comparison is case insensitive.
+func (pu *PrivyUser) GetEthDelegatedWalletByAddress(address string) *LinkedAccount {
+	return pu.GetDelegatedWalletByAddress(ChainTypeEthereum, address)
+}
+
+// Fetches the users delegated solana wallet at a specific address, or nil if the user does
+// not hold one. Address comparison is exact, because base58 is case sensitive.
+func (pu *PrivyUser) GetSolDelegatedWalletByAddress(address string) *LinkedAccount {
+	return pu.GetDelegatedWalletByAddress(ChainTypeSolana, address)
 }
 
 // Fetches the users delegated eth wallet carrying a given Privy external id, or nil.
@@ -104,6 +139,36 @@ func (pu *PrivyUser) GetUsersSolDelegatedWallet() *LinkedAccount {
 	}
 
 	return nil
+}
+
+// Reports whether the user holds a Privy embedded solana wallet, delegated or not.
+//
+// This is a different question from GetUsersSolDelegatedWallet, and the gap between the two
+// is the point. A user whose embedded solana wallet was made without our signer attached has
+// a wallet we cannot sign with and cannot replace: the create endpoint is a no-op for a chain
+// type the user already holds. Knowing that is what stops the enclave asking for a wallet
+// Privy will never make.
+//
+// A linked external wallet — Phantom, say — is also a `wallet` on `solana`, but Privy does
+// not hold its key, so it neither can be signed for nor stands in the way of an embedded one.
+func (pu *PrivyUser) HasEmbeddedSolWallet() bool {
+	for _, acc := range pu.LinkedAccounts {
+		if acc.Type != "wallet" || acc.ChainType != ChainTypeSolana {
+			continue
+		}
+
+		if acc.WalletClientType == "privy" || acc.ConnectorType == "embedded" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Reports whether a solana wallet could still be provisioned for the user: they hold no
+// delegated one, and no embedded one that would turn the create into a no-op.
+func (pu *PrivyUser) NeedsSolWallet() bool {
+	return pu.GetUsersSolDelegatedWallet() == nil && !pu.HasEmbeddedSolWallet()
 }
 
 // UnixTime is a custom type that can unmarshal Unix timestamps from JSON
@@ -171,10 +236,22 @@ type AdditionalSigner struct {
 // wallet only on the very first provision and silently dropped afterwards. Purpose-built
 // wallets are created with NewCreateDelegatedEthWalletRequest instead.
 func NewCreateEthWalletRequest(delegatedSignerId string) *CreateWalletRequest {
+	return newCreateEmbeddedWalletRequest(ChainTypeEthereum, delegatedSignerId)
+}
+
+// Creates the request that provisions a user's embedded solana wallet.
+//
+// The same endpoint and the same shape as the eth one, with the same signer attached: it is
+// our key quorum among the wallet's signers that lets the enclave sign for it, on any chain.
+func NewCreateSolWalletRequest(delegatedSignerId string) *CreateWalletRequest {
+	return newCreateEmbeddedWalletRequest(ChainTypeSolana, delegatedSignerId)
+}
+
+func newCreateEmbeddedWalletRequest(chainType string, delegatedSignerId string) *CreateWalletRequest {
 	return &CreateWalletRequest{
 		PrivyWalletCreateRequestWallets: []*CreateWalletData{
 			{
-				ChainType: "ethereum",
+				ChainType: chainType,
 				AdditionalSigners: []*AdditionalSigner{
 					{
 						SignerID: delegatedSignerId,

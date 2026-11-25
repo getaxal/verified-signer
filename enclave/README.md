@@ -215,6 +215,25 @@ delegation can take up to the TTL to be reflected here. That is a staleness wind
 authorization hole: Privy enforces the signer quorum at RPC time, so a revoked wallet is
 refused there regardless of what the enclave believes.
 
+### Solana Signing
+- **POST** `/api/v1/user/signer/solana/signTransaction` - User-authenticated Solana transaction signing
+- **POST** `/api/v1/axal/signer/solana/signTransaction` - HMAC-authenticated Axal Solana transaction signing
+
+Both sign a base64 serialized transaction with the user's delegated Solana wallet and return
+it signed; neither broadcasts it. The wallet is named by `wallet_address`, as on the Ethereum
+routes, with one difference that matters: a Solana address is base58 and **case sensitive**,
+so it is compared exactly and is not lowercased in the HMAC preimage, which is:
+
+```
+"solana" + ":" + method + ":" + encoding + ":" + walletAddress + ":" + hex(sha256(transaction)) + ":" + privyId
+```
+
+Reading a user provisions their Solana wallet if they hold none, with the enclave's key
+quorum attached. Unlike the Ethereum wallet, a failure to create it does not fail the read:
+every signature on every chain starts by reading the user, so the Solana wallet is not
+allowed to take Ethereum signing down with it. The record is cached for one minute instead
+of two hours in that case, which is what retries the create. See [API.md](API.md#solana-wallets).
+
 ### Attestation
 - **GET** `/api/v1/attest/bytes/:nonce` - Get attestation bytes for verification
 - **GET** `/api/v1/attest/doc/:nonce` - Get attestation document for integrity proof

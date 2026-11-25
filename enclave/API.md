@@ -2,8 +2,8 @@
 
 Wire contract for the enclave's HTTP API, as served through the host's VSOCK proxy.
 
-This document covers the routes that changed for multi-wallet support, plus the new
-wallet provisioning route. For what the enclave *is*, see [README.md](README.md);
+This document covers the routes that changed for multi-wallet support, the wallet
+provisioning route, and the Solana signing routes. For what the enclave *is*, see [README.md](README.md);
 for caching behaviour, see the Caching section there.
 
 - [Conventions](#conventions)
@@ -13,6 +13,9 @@ for caching behaviour, see the Caching section there.
 - [POST /api/v1/user/signer/eth/secp256k1Sign](#post-apiv1usersignerethsecp256k1sign)
 - [POST /api/v1/axal/signer/eth/secp256k1Sign](#post-apiv1axalsignerethsecp256k1sign)
 - [POST /api/v1/axal/signer/eth/personalSign](#post-apiv1axalsignerethpersonalsign)
+- [Solana wallets](#solana-wallets)
+- [POST /api/v1/user/signer/solana/signTransaction](#post-apiv1usersignersolanasigntransaction)
+- [POST /api/v1/axal/signer/solana/signTransaction](#post-apiv1axalsignersolanasigntransaction)
 - [HMAC reference](#hmac-reference)
 - [Errors](#errors)
 
@@ -61,12 +64,16 @@ Addresses are the wire format rather than Privy wallet ids because an address ca
 *verified* against the user's linked accounts. The enclave resolves the address to a Privy
 wallet id internally and signs through `POST /v1/wallets/{wallet_id}/rpc`.
 
+The Solana routes follow the same rules with a Solana address — see
+[Solana wallets](#solana-wallets) for the two places they differ.
+
 ---
 
 ## GET /api/v1/user
 
 Returns the authenticated Privy user. Creates the user's first embedded wallet if they do
-not have one, so it is safe to call at signup.
+not have one, so it is safe to call at signup. It then does the same for a Solana wallet —
+see [Solana wallets](#solana-wallets) for when that wallet can be missing from the response.
 
 **Auth:** user Privy JWT.
 
@@ -93,6 +100,14 @@ not have one, so it is safe to call at signup.
       "wallet_index": 1,
       "delegated": true,
       "external_id": "cm00000000000000000001-wealth_plan"
+    },
+    {
+      "id": "qd4h8s1f6g3j7k2l",
+      "type": "wallet",
+      "address": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+      "chain_type": "solana",
+      "wallet_index": 0,
+      "delegated": true
     }
   ],
   "mfa_methods": [],
@@ -364,10 +379,137 @@ requesting a signature. Raw messages and signatures are not logged.
 
 ---
 
+## Solana wallets
+
+Each user has one delegated Solana wallet: their Privy embedded wallet on `solana`, with the
+enclave's key quorum attached as an additional signer. It appears in `linked_accounts` with
+`chain_type: "solana"` and `delegated: true`.
+
+### Provisioning
+
+`GET /api/v1/user` creates the wallet when the user holds no embedded Solana wallet, through
+`POST /v1/users/{user_id}/wallets` with `chain_type: "solana"` and the quorum in
+`additional_signers`. Existing users get theirs the first time their record is read after
+this ships; there is no separate route to call.
+
+**A user can come back without one, and that is not an error.** Every signature on every
+chain starts by reading the user, so a Solana create that fails is logged and the read
+succeeds — otherwise a Privy failure on a wallet most requests never touch would take eth
+signing down with it. Two cases produce a response with no delegated Solana wallet:
+
+| Case | What happens next |
+|---|---|
+| The create failed (Privy error, timeout) | The record is cached for **1 minute** instead of 2 hours, so the create is retried on the next read after that. |
+| The user already holds an embedded Solana wallet **without** the quorum attached (`delegated: false`) | Nothing is created, and nothing is retried. Privy's create is a no-op for a chain type the user already holds, and attaching a signer to an existing wallet needs its owner's authorization — so the user has to delegate it from their own client. Once they do, signing works at once (see below), without waiting for the cache. |
+
+A wallet the user linked from outside, such as Phantom, is not an embedded wallet. Privy does
+not hold its key, so it is never signed with and does not stop an embedded one being created.
+
+### Selection
+
+The signing routes take a required `wallet_address`, resolved exactly as on the eth routes:
+no default, no fallback, and it must be a delegated wallet of the authenticated user. Two
+differences follow from the address format:
+
+- **Case sensitive.** A Solana address is base58, where case is part of the value. Send it
+  exactly as `linked_accounts` reports it; it is compared byte for byte and is **not**
+  lowercased in the HMAC preimage.
+- **One chain per route.** A Solana route only resolves `solana` wallets and an eth route
+  only `ethereum` ones, whatever address is sent.
+
+An address not found on the cached record as a delegated Solana wallet is resolved with
+`GET /v1/wallets?user_id=<privy id>&address=<address>` under the same three assertions as an
+eth wallet — Privy lists it under this user, the quorum is among its signers on `solana`, and
+any `external_id` is this user's. This is what makes a wallet signable as soon as the user
+delegates it, while the cached record still says `delegated: false`.
+
+---
+
+## POST /api/v1/user/signer/solana/signTransaction
+
+Signs a Solana transaction with a wallet the authenticated user holds. The transaction is
+**signed and returned, not broadcast** — submitting it to the network is the caller's step.
+
+**Auth:** user Privy JWT.
+
+### Request
+
+```jsonc
+{
+  "method": "signTransaction",
+  "params": {
+    "transaction": "AQAAAAAAAAAA…",   // base64 serialized transaction
+    "encoding": "base64"
+  },
+  "wallet_address": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `method` | string | Required. Must be `"signTransaction"`. `signAndSendTransaction` is rejected. |
+| `params.transaction` | string | Required. The serialized transaction, standard base64 with padding. Up to 4096 bytes decoded. |
+| `params.encoding` | string | Required. Must be `"base64"`. |
+| `wallet_address` | string | **Required.** Base58, case sensitive. Must be a delegated solana wallet of the JWT's user. |
+
+The transaction is passed to Privy as sent; the enclave checks that it is base64 and within
+the size bound, and does not parse it. The wallet must be a required signer of the
+transaction, or Privy refuses it and that refusal is passed through.
+
+### Response `200`
+
+```jsonc
+{
+  "method": "signTransaction",
+  "data": {
+    "signed_transaction": "AQAAAAAAAAAA…",   // base64, with this wallet's signature filled in
+    "encoding": "base64"
+  }
+}
+```
+
+---
+
+## POST /api/v1/axal/signer/solana/signTransaction
+
+Signs a Solana transaction on Axal's initiative. No user session exists for these, so the
+caller names the user. Signed and returned, not broadcast.
+
+**Auth:** HMAC over the [`signTransaction` preimage](#hmac-reference).
+
+### Request
+
+```jsonc
+{
+  "privy_id": "did:privy:cm00000000000000000001",
+  "method": "signTransaction",
+  "params": {
+    "transaction": "AQAAAAAAAAAA…",
+    "encoding": "base64"
+  },
+  "wallet_address": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `privy_id` | string | Required. The user whose wallet signs. |
+| `method` | string | Required. Must be `"signTransaction"`. |
+| `params.transaction` | string | Required. Standard base64 with padding, up to 4096 bytes decoded. |
+| `params.encoding` | string | Required. Must be `"base64"`. |
+| `wallet_address` | string | **Required.** Base58, case sensitive. Must be a delegated solana wallet of `privy_id`. |
+
+### Response `200`
+
+The same shape as the user route.
+
+---
+
 ## HMAC reference
 
 `auth` on the Axal routes is `hex(HMAC_SHA256(sharedSecret, preimage))`. Fields are joined
-with `:`, and the wallet address is **lowercased** before joining.
+with `:`. On the eth routes the wallet address is **lowercased** before joining; on the
+Solana route it is **not**.
 
 ### `secp256k1Sign`
 
@@ -389,6 +531,25 @@ method + ":" + purpose + ":" + encoding + ":" + lower(walletAddress) + ":" + hex
 The message is hashed rather than included, so no raw message reaches an HTTP header or a
 log line.
 
+### Solana `signTransaction`
+
+```
+"solana" + ":" + method + ":" + encoding + ":" + walletAddress + ":" + hex(sha256(transaction)) + ":" + privyId
+```
+
+For a valid request that is:
+
+```
+solana:signTransaction:base64:<walletAddress>:<hex sha256>:<privyId>
+```
+
+- `walletAddress` is used **as sent, not lowercased**. Base58 is case sensitive, so folding
+  the case would give two different keys the same preimage.
+- `transaction` is the base64 **string** exactly as it appears in the body, hashed as UTF-8
+  bytes — not the decoded transaction.
+- The leading `solana` keeps a signature computed for this route from validating on any
+  other.
+
 ---
 
 ## Errors
@@ -399,12 +560,13 @@ log line.
 | `401` | `Unauthorized User` | JWT invalid, expired, or not for this app. |
 | `401` | `Missing HMAC signature` | No `auth` header on an `/axal` route. |
 | `401` | `Unauthorized User - Invalid HMAC` | HMAC did not verify against the expected preimage. |
-| `400` | `tx data is invalid` | Malformed body, wrong `method`, missing `hash`, or missing/malformed `wallet_address` on a `secp256k1Sign` route. |
+| `400` | `tx data is invalid` | Malformed body, wrong `method`, missing `hash`, or missing/malformed `wallet_address` on a `secp256k1Sign` route. On a Solana `signTransaction` route: wrong `method` or `encoding`, a `transaction` that is not base64, is empty or is over the size bound, or a missing/malformed `wallet_address`. |
 | `400` | `signing data is invalid` | The same, for `personalSign` — including an unsupported encoding or an empty or oversized message. |
 | `400` | `wallet request is invalid` | Malformed body or invalid `purpose` on the wallet route. |
 | `400` | `purpose is invalid` | The purpose cannot form a valid Privy external id. |
 | `400` | `requested wallet is not a delegated eth wallet for this user` | The address is unknown, undelegated, on another chain, or belongs to a different user. |
-| `500` | `Internal Server Error` | Privy call failed, or a created wallet came back undelegated. |
+| `400` | `requested wallet is not a delegated solana wallet for this user` | The same, on a Solana route — including an address that differs from the user's wallet only in case, and a user whose Solana wallet has not been delegated. |
+| `500` | `Internal Server Error` | Privy call failed, a created eth wallet came back undelegated, or Privy answered a Solana signing request without a signed transaction. |
 
 A rejected signing request never produces a signature — there is no partial success and no
 substitute wallet.

@@ -70,7 +70,7 @@ func (s *walletProvisioningServer) linkedAccountsLocked() []data.LinkedAccount {
 	accounts := []data.LinkedAccount{{
 		WalletID: "w0", Type: "wallet", Address: walletZeroAddr,
 		ChainType: "ethereum", Delegated: true, WalletIndex: 0,
-	}}
+	}, solWalletAccount()}
 
 	for _, acc := range s.created {
 		if s.suppressExternalID {
