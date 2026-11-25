@@ -26,6 +26,10 @@ const (
 	// linked emails, accepted terms, MFA -- rather than by the wallet set.
 	userCacheTTL = 2 * time.Hour
 
+	// How long a record is served while the user is still owed a solana wallet, which is how
+	// soon the create is tried again. See userRecordTTL.
+	solWalletRetryTTL = time.Minute
+
 	cacheCapacity = 1000
 )
 
@@ -37,7 +41,7 @@ type PrivyClient struct {
 	authorization string
 	userCache     *ttlcache.Cache[string, data.PrivyUser]
 	// userFetchGroup serializes and collapses concurrent first-time GetUser calls
-	// per privyId so that they share a single GET + at most one create-wallet POST.
+	// per privyId so that they share a single GET + at most one create-wallet POST per chain.
 	userFetchGroup singleflight.Group
 	// walletCreateGroup does the same for purpose-built wallets, keyed by external id.
 	// Two concurrent requests for the same user and purpose must not become two wallets.

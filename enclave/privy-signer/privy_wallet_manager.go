@@ -176,7 +176,8 @@ func (cli *PrivyClient) accountForWallet(privyId string, user *data.PrivyUser, e
 		return nil, cli.createInternalServerError()
 	}
 
-	account := cli.signableAccountForWallet(privyId, wallet)
+	// Purpose wallets are eth wallets, so that is the chain this one has to be on.
+	account := cli.signableAccountForWallet(privyId, wallet, data.ChainTypeEthereum)
 	if account == nil {
 		log.Errorf("Create wallet API error: the wallet under external id %s is not usable for user %s", externalID, privyId)
 		return nil, cli.createInternalServerError()
@@ -246,9 +247,11 @@ func (cli *PrivyClient) userAccountForWallet(privyId string, user *data.PrivyUse
 // Reports whether Axal may sign with a wallet, rendered as a linked account when it may and nil
 // with a logged reason when it may not.
 //
-// This answers signing authority only — our key quorum among the wallet's signers, on ethereum.
-// That is what POST /v1/wallets/{id}/rpc checks, so without it the wallet serves user-initiated
-// signing and fails every Axal-initiated one, silently, at a time nobody is watching.
+// This answers signing authority only — our key quorum among the wallet's signers, on the chain
+// the caller is signing for. The quorum is what POST /v1/wallets/{id}/rpc checks, so without it
+// the wallet serves user-initiated signing and fails every Axal-initiated one, silently, at a
+// time nobody is watching. The chain is checked because the quorum alone would pass a wallet on
+// any chain, and each signing route speaks exactly one.
 //
 // Ownership is deliberately not answered here, because the two callers prove it differently and
 // folding them together would weaken one of them. Provisioning derives the external id from the
@@ -257,12 +260,12 @@ func (cli *PrivyClient) userAccountForWallet(privyId string, user *data.PrivyUse
 // is. An earlier version checked the external id in both places, which looked uniform but
 // inferred ownership from a convention of ours rather than from Privy — and would have refused
 // the user's own wallet 0, which carries no external id.
-func (cli *PrivyClient) signableAccountForWallet(privyId string, wallet *data.PrivyWallet) *data.LinkedAccount {
+func (cli *PrivyClient) signableAccountForWallet(privyId string, wallet *data.PrivyWallet, chainType string) *data.LinkedAccount {
 	signerID := cli.teeConfig.Privy.DelegatedActionsKeyId
 
-	if !wallet.HasAdditionalSigner(signerID) || wallet.ChainType != "ethereum" {
-		log.Errorf("Wallet cannot be signed for by Axal on behalf of user %s: expected signer %s among %s",
-			privyId, signerID, summarizeWallet(wallet))
+	if !wallet.HasAdditionalSigner(signerID) || wallet.ChainType != chainType {
+		log.Errorf("Wallet cannot be signed for by Axal on behalf of user %s: expected signer %s on %s among %s",
+			privyId, signerID, chainType, summarizeWallet(wallet))
 		return nil
 	}
 
@@ -385,7 +388,7 @@ func (cli *PrivyClient) getWalletByExternalID(externalID string) (*data.PrivyWal
 //
 // A quorum-owned wallet is invisible to the user record, so this is also the only way to see
 // one for signing.
-func (cli *PrivyClient) findUserWalletByAddress(privyId string, address string) (*data.PrivyWallet, *data.HttpError) {
+func (cli *PrivyClient) findUserWalletByAddress(privyId string, address string, chainType string) (*data.PrivyWallet, *data.HttpError) {
 	wallets, httpErr := cli.listUserWallets(privyId, "address", address)
 	if httpErr != nil {
 		return nil, httpErr
@@ -398,8 +401,9 @@ func (cli *PrivyClient) findUserWalletByAddress(privyId string, address string) 
 
 		// The filter is re-checked rather than trusted. If Privy ever widened it, or ignored a
 		// combination of filters, a wallet at another address would be a wallet we were not
-		// asked about.
-		if strings.EqualFold(wallet.Address, address) {
+		// asked about. The comparison is the chain's own: exact on solana, where an address
+		// that differs only in case is a different key.
+		if data.SameWalletAddress(chainType, wallet.Address, address) {
 			return wallet, nil
 		}
 	}

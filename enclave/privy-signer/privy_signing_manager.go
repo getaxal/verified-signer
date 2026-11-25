@@ -55,7 +55,7 @@ func (cli *PrivyClient) prepSigningTxRequest(body interface{}, walletId string) 
 	return req, nil
 }
 
-// Resolves the wallet a signing request names and verifies it belongs to the user the
+// Resolves the eth wallet a signing request names and verifies it belongs to the user the
 // request authenticated as.
 //
 // The enclave never infers a signer. A user may hold several delegated eth wallets, so
@@ -65,12 +65,31 @@ func (cli *PrivyClient) prepSigningTxRequest(body interface{}, walletId string) 
 // ownership check, and it is why requests name a wallet by address rather than by index
 // or by Privy wallet id, neither of which we can verify against the user.
 func (cli *PrivyClient) resolveDelegatedWallet(privyId string, walletAddress string) (*data.LinkedAccount, *data.HttpError) {
+	return cli.resolveDelegatedWalletOnChain(privyId, walletAddress, data.ChainTypeEthereum)
+}
+
+// Resolves the solana wallet a signing request names, under the same rules as the eth one:
+// named by address, verified against the user, never substituted.
+func (cli *PrivyClient) resolveDelegatedSolWallet(privyId string, walletAddress string) (*data.LinkedAccount, *data.HttpError) {
+	return cli.resolveDelegatedWalletOnChain(privyId, walletAddress, data.ChainTypeSolana)
+}
+
+// What a chain is called in the message a caller reads when their wallet is refused. The eth
+// wording predates the second chain and is part of the documented API, so it is kept as is.
+var chainLabels = map[string]string{
+	data.ChainTypeEthereum: "eth",
+	data.ChainTypeSolana:   "solana",
+}
+
+// Resolves a wallet by address on one chain. The chain is fixed by the route, never taken
+// from the request, so a wallet on another chain cannot be signed with through it.
+func (cli *PrivyClient) resolveDelegatedWalletOnChain(privyId string, walletAddress string, chainType string) (*data.LinkedAccount, *data.HttpError) {
 	user, httpErr := cli.GetUser(privyId)
 	if httpErr != nil {
 		return nil, httpErr
 	}
 
-	if wallet := user.GetEthDelegatedWalletByAddress(walletAddress); wallet != nil && wallet.WalletID != "" {
+	if wallet := user.GetDelegatedWalletByAddress(chainType, walletAddress); wallet != nil && wallet.WalletID != "" {
 		return wallet, nil
 	}
 
@@ -78,15 +97,19 @@ func (cli *PrivyClient) resolveDelegatedWallet(privyId string, walletAddress str
 	// accounts, so the record cannot name it however fresh it is. Privy is asked instead, and
 	// scoping that question to this user is what replaces the ownership proof the record used to
 	// provide: the wallet comes back only if Privy's own ownership graph puts it under this user.
+	//
+	// It is also what sees a delegation the cached record predates. A wallet the record still
+	// calls undelegated is signable the moment our quorum is among its signers, and the wallet
+	// object is where that shows.
 	log.Infof("Wallet %s is not on the record for user %s, resolving it at Privy", walletAddress, privyId)
 
-	privyWallet, httpErr := cli.findUserWalletByAddress(privyId, walletAddress)
+	privyWallet, httpErr := cli.findUserWalletByAddress(privyId, walletAddress, chainType)
 	if httpErr != nil {
 		return nil, httpErr
 	}
 
 	if privyWallet != nil {
-		if account := cli.signableAccountForWallet(privyId, privyWallet); account != nil {
+		if account := cli.signableAccountForWallet(privyId, privyWallet, chainType); account != nil {
 			// Fold it into the cached record so the next signature for this wallet resolves
 			// without the lookup.
 			cli.cacheUser(privyId, mergedUser(user, []*data.LinkedAccount{account}))
@@ -95,12 +118,14 @@ func (cli *PrivyClient) resolveDelegatedWallet(privyId string, walletAddress str
 		}
 	}
 
-	log.Errorf("Signing API error: requested wallet is not a delegated eth wallet of user %s", privyId)
+	label := chainLabels[chainType]
+
+	log.Errorf("Signing API error: requested wallet is not a delegated %s wallet of user %s", label, privyId)
 
 	return nil, &data.HttpError{
 		Code: http.StatusBadRequest,
 		Message: data.Message{
-			Message: "requested wallet is not a delegated eth wallet for this user",
+			Message: fmt.Sprintf("requested wallet is not a delegated %s wallet for this user", label),
 		},
 	}
 }

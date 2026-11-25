@@ -52,3 +52,18 @@ func (cli *PrivyClient) ValidateAxalPersonalSignAuth(hmacSignature string, req *
 	}
 	return nil
 }
+
+// For axal solana signing requests - HMAC validation only.
+//
+// As on the eth route, the preimage covers the wallet and the user as well as what is being
+// signed, so none of the three can be swapped under a valid signature.
+func (cli *PrivyClient) ValidateAxalSolSignTransactionAuth(hmacSignature string, req *data.AxalSolSignTransactionRequest) *data.HttpError {
+	if !auth.VerifyAxalSignature(req.AuthPayload(), hmacSignature, cli.teeConfig.Axal.AxalRequestSecretKey) {
+		log.Errorf("invalid HMAC signature for solana signTransaction request for user %s", req.PrivyID)
+		return &data.HttpError{
+			Code:    401,
+			Message: data.Message{Message: "Unauthorized User - Invalid HMAC"},
+		}
+	}
+	return nil
+}
